@@ -1,7 +1,7 @@
-From 4c1658312392db894fd36bbdc98476d6e6b1e32f Mon Sep 17 00:00:00 2001
+From ecececeedd9e0b8ed6589ed4e25d5fdf6789a59b Mon Sep 17 00:00:00 2001
 From: Shayne Chen <shayne.chen@mediatek.com>
 Date: Wed, 22 Jun 2022 10:39:47 +0800
-Subject: [PATCH 1001/1008] mt76: mt7915: add mtk internal debug tools for mt76
+Subject: [PATCH 1001/1009] mt76: mt7915: add mtk internal debug tools for mt76
 
 ---
  mt76_connac_mcu.h     |    6 +
@@ -9,41 +9,47 @@ Subject: [PATCH 1001/1008] mt76: mt7915: add mtk internal debug tools for mt76
  mt7915/debugfs.c      |   73 +-
  mt7915/mac.c          |   14 +
  mt7915/main.c         |    4 +
- mt7915/mcu.c          |   44 +
+ mt7915/mcu.c          |   48 +-
  mt7915/mcu.h          |    4 +
  mt7915/mt7915.h       |   43 +
- mt7915/mt7915_debug.h | 1350 +++++++++++++++++++
- mt7915/mtk_debugfs.c  | 2923 +++++++++++++++++++++++++++++++++++++++++
+ mt7915/mt7915_debug.h | 1363 +++++++++++++++++++
+ mt7915/mtk_debugfs.c  | 3003 +++++++++++++++++++++++++++++++++++++++++
  mt7915/mtk_mcu.c      |   51 +
  tools/fwlog.c         |   44 +-
- 12 files changed, 4545 insertions(+), 13 deletions(-)
- mode change 100644 => 100755 mt7915/mcu.c
+ 12 files changed, 4641 insertions(+), 14 deletions(-)
  create mode 100644 mt7915/mt7915_debug.h
  create mode 100644 mt7915/mtk_debugfs.c
  create mode 100644 mt7915/mtk_mcu.c
 
 diff --git a/mt76_connac_mcu.h b/mt76_connac_mcu.h
-index e94d670..333d3a0 100644
+index a5e6ee4..cbe0c52 100644
 --- a/mt76_connac_mcu.h
 +++ b/mt76_connac_mcu.h
-@@ -1119,6 +1119,12 @@ enum {
+@@ -1151,6 +1151,7 @@ enum {
+ 	MCU_EXT_CMD_SET_TX_POWER_CTRL = 0x11,
+ 	MCU_EXT_CMD_FW_LOG_2_HOST = 0x13,
+ 	MCU_EXT_CMD_TXBF_ACTION = 0x1e,
++	MCU_EXT_CMD_MEC_CTRL = 0x1f,
+ 	MCU_EXT_CMD_EFUSE_BUFFER_MODE = 0x21,
+ 	MCU_EXT_CMD_THERMAL_PROT = 0x23,
+ 	MCU_EXT_CMD_STA_REC_UPDATE = 0x25,
+@@ -1174,6 +1175,11 @@ enum {
  	MCU_EXT_CMD_TX_POWER_FEATURE_CTRL = 0x58,
  	MCU_EXT_CMD_RXDCOC_CAL = 0x59,
  	MCU_EXT_CMD_GET_MIB_INFO = 0x5a,
 +#ifdef MTK_DEBUG
-+	MCU_EXT_CMD_RED_ENABLE = 0x68,
 +	MCU_EXT_CMD_RED_SHOW_STA = 0x69,
 +	MCU_EXT_CMD_RED_TARGET_DELAY = 0x6A,
 +	MCU_EXT_CMD_RED_TX_RPT = 0x6B,
 +#endif
  	MCU_EXT_CMD_TXDPD_CAL = 0x60,
  	MCU_EXT_CMD_CAL_CACHE = 0x67,
- 	MCU_EXT_CMD_SET_RADAR_TH = 0x7c,
+ 	MCU_EXT_CMD_RED_ENABLE = 0x68,
 diff --git a/mt7915/Makefile b/mt7915/Makefile
-index b794ceb..a3474e2 100644
+index f033116..cbcb64b 100644
 --- a/mt7915/Makefile
 +++ b/mt7915/Makefile
-@@ -3,7 +3,7 @@
+@@ -4,7 +4,7 @@ EXTRA_CFLAGS += -DCONFIG_MT76_LEDS
  obj-$(CONFIG_MT7915E) += mt7915e.o
  
  mt7915e-y := pci.o init.o dma.o eeprom.o main.o mcu.o mac.o \
@@ -52,9 +58,8 @@ index b794ceb..a3474e2 100644
  
  mt7915e-$(CONFIG_NL80211_TESTMODE) += testmode.o
  mt7915e-$(CONFIG_MT7986_WMAC) += soc.o
-\ No newline at end of file
 diff --git a/mt7915/debugfs.c b/mt7915/debugfs.c
-index 9f21d97..0cfb606 100644
+index 5a46813..f1f3f2f 100644
 --- a/mt7915/debugfs.c
 +++ b/mt7915/debugfs.c
 @@ -8,6 +8,9 @@
@@ -67,7 +72,7 @@ index 9f21d97..0cfb606 100644
  
  /** global debugfs **/
  
-@@ -448,6 +451,9 @@ mt7915_fw_debug_wm_set(void *data, u64 val)
+@@ -504,6 +507,9 @@ mt7915_fw_debug_wm_set(void *data, u64 val)
  	int ret;
  
  	dev->fw.debug_wm = val ? MCU_FW_LOG_TO_HOST : 0;
@@ -77,7 +82,7 @@ index 9f21d97..0cfb606 100644
  
  	if (dev->fw.debug_bin)
  		val = 16;
-@@ -472,6 +478,9 @@ mt7915_fw_debug_wm_set(void *data, u64 val)
+@@ -528,6 +534,9 @@ mt7915_fw_debug_wm_set(void *data, u64 val)
  		if (ret)
  			goto out;
  	}
@@ -87,7 +92,7 @@ index 9f21d97..0cfb606 100644
  
  	/* WM CPU info record control */
  	mt76_clear(dev, MT_CPU_UTIL_CTRL, BIT(0));
-@@ -479,6 +488,12 @@ mt7915_fw_debug_wm_set(void *data, u64 val)
+@@ -535,6 +544,12 @@ mt7915_fw_debug_wm_set(void *data, u64 val)
  	mt76_wr(dev, MT_MCU_WM_CIRQ_IRQ_MASK_CLR_ADDR, BIT(5));
  	mt76_wr(dev, MT_MCU_WM_CIRQ_IRQ_SOFT_ADDR, BIT(5));
  
@@ -100,7 +105,7 @@ index 9f21d97..0cfb606 100644
  out:
  	if (ret)
  		dev->fw.debug_wm = 0;
-@@ -491,7 +506,11 @@ mt7915_fw_debug_wm_get(void *data, u64 *val)
+@@ -547,7 +562,11 @@ mt7915_fw_debug_wm_get(void *data, u64 *val)
  {
  	struct mt7915_dev *dev = data;
  
@@ -113,7 +118,7 @@ index 9f21d97..0cfb606 100644
  
  	return 0;
  }
-@@ -576,6 +595,17 @@ mt7915_fw_debug_bin_set(void *data, u64 val)
+@@ -632,6 +651,17 @@ mt7915_fw_debug_bin_set(void *data, u64 val)
  
  	relay_reset(dev->relay_fwlog);
  
@@ -131,7 +136,7 @@ index 9f21d97..0cfb606 100644
  	return mt7915_fw_debug_wm_set(dev, dev->fw.debug_wm);
  }
  
-@@ -1038,6 +1068,11 @@ int mt7915_init_debugfs(struct mt7915_phy *phy)
+@@ -1257,6 +1287,11 @@ int mt7915_init_debugfs(struct mt7915_phy *phy)
  	if (!ext_phy)
  		dev->debugfs_dir = dir;
  
@@ -143,7 +148,7 @@ index 9f21d97..0cfb606 100644
  	return 0;
  }
  
-@@ -1078,17 +1113,53 @@ void mt7915_debugfs_rx_fw_monitor(struct mt7915_dev *dev, const void *data, int
+@@ -1297,17 +1332,53 @@ void mt7915_debugfs_rx_fw_monitor(struct mt7915_dev *dev, const void *data, int
  		.msg_type = cpu_to_le16(PKT_TYPE_RX_FW_MONITOR),
  	};
  
@@ -198,10 +203,10 @@ index 9f21d97..0cfb606 100644
  
  	if (dev->relay_fwlog)
 diff --git a/mt7915/mac.c b/mt7915/mac.c
-index 6a4da8e..c332e0a 100644
+index 97ca55d..1ba4096 100644
 --- a/mt7915/mac.c
 +++ b/mt7915/mac.c
-@@ -239,6 +239,10 @@ mt7915_mac_fill_rx(struct mt7915_dev *dev, struct sk_buff *skb)
+@@ -299,6 +299,10 @@ mt7915_mac_fill_rx(struct mt7915_dev *dev, struct sk_buff *skb,
  	__le16 fc = 0;
  	int idx;
  
@@ -211,8 +216,8 @@ index 6a4da8e..c332e0a 100644
 +#endif
  	memset(status, 0, sizeof(*status));
  
- 	if ((rxd1 & MT_RXD1_NORMAL_BAND_IDX) && !phy->band_idx) {
-@@ -421,6 +425,10 @@ mt7915_mac_fill_rx(struct mt7915_dev *dev, struct sk_buff *skb)
+ 	if ((rxd1 & MT_RXD1_NORMAL_BAND_IDX) && !phy->mt76->band_idx) {
+@@ -482,6 +486,10 @@ mt7915_mac_fill_rx(struct mt7915_dev *dev, struct sk_buff *skb,
  	}
  
  	hdr_gap = (u8 *)rxd - skb->data + 2 * remove_pad;
@@ -223,7 +228,7 @@ index 6a4da8e..c332e0a 100644
  	if (hdr_trans && ieee80211_has_morefrags(fc)) {
  		struct ieee80211_vif *vif;
  		int err;
-@@ -760,6 +768,12 @@ int mt7915_tx_prepare_skb(struct mt76_dev *mdev, void *txwi_ptr,
+@@ -819,6 +827,12 @@ int mt7915_tx_prepare_skb(struct mt76_dev *mdev, void *txwi_ptr,
  	tx_info->buf[1].skip_unmap = true;
  	tx_info->nbuf = MT_CT_DMA_BUF_NUM;
  
@@ -237,10 +242,10 @@ index 6a4da8e..c332e0a 100644
  }
  
 diff --git a/mt7915/main.c b/mt7915/main.c
-index 3958799..929c726 100644
+index 3bbccbd..94ecded 100644
 --- a/mt7915/main.c
 +++ b/mt7915/main.c
-@@ -62,7 +62,11 @@ static int mt7915_start(struct ieee80211_hw *hw)
+@@ -73,7 +73,11 @@ int mt7915_run(struct ieee80211_hw *hw)
  	if (ret)
  		goto out;
  
@@ -253,12 +258,10 @@ index 3958799..929c726 100644
  		goto out;
  
 diff --git a/mt7915/mcu.c b/mt7915/mcu.c
-old mode 100644
-new mode 100755
-index a726021..4ff13c7
+index f151ce8..ff718f7 100644
 --- a/mt7915/mcu.c
 +++ b/mt7915/mcu.c
-@@ -195,6 +195,11 @@ mt7915_mcu_send_message(struct mt76_dev *mdev, struct sk_buff *skb,
+@@ -199,6 +199,11 @@ mt7915_mcu_send_message(struct mt76_dev *mdev, struct sk_buff *skb,
  	else
  		qid = MT_MCUQ_WM;
  
@@ -270,7 +273,19 @@ index a726021..4ff13c7
  	return mt76_tx_queue_skb_raw(dev, mdev->q_mcu[qid], skb, 0);
  }
  
-@@ -3164,6 +3169,8 @@ int mt7915_mcu_set_sku_en(struct mt7915_phy *phy, bool enable)
+@@ -2315,7 +2320,10 @@ static int mt7915_red_set_watermark(struct mt7915_dev *dev)
+ 				 sizeof(req), false);
+ }
+ 
+-static int mt7915_mcu_set_red(struct mt7915_dev *dev, bool enabled)
++#ifndef MTK_DEBUG
++static
++#endif
++int mt7915_mcu_set_red(struct mt7915_dev *dev, bool enabled)
+ {
+ #define RED_DISABLE		0
+ #define RED_BY_WA_ENABLE	2
+@@ -3377,6 +3385,8 @@ int mt7915_mcu_set_sku_en(struct mt7915_phy *phy, bool enable)
  		.sku_enable = enable,
  	};
  
@@ -279,7 +294,7 @@ index a726021..4ff13c7
  	return mt76_mcu_send_msg(&dev->mt76,
  				 MCU_EXT_CMD(TX_POWER_FEATURE_CTRL), &req,
  				 sizeof(req), true);
-@@ -3439,6 +3446,43 @@ int mt7915_mcu_twt_agrt_update(struct mt7915_dev *dev,
+@@ -3814,6 +3824,23 @@ int mt7915_mcu_twt_agrt_update(struct mt7915_dev *dev,
  				 &req, sizeof(req), true);
  }
  
@@ -298,36 +313,39 @@ index a726021..4ff13c7
 +
 +	return mt76_mcu_send_msg(&dev->mt76, cmd, &req, sizeof(req), wait_resp);
 +}
-+
-+int mt7915_mcu_set_red(struct mt7915_dev *dev, bool enabled)
-+{
-+#define RED_DISABLE		0
-+#define RED_BY_HOST_ENABLE	1
-+#define RED_BY_WA_ENABLE	2
-+	int ret;
-+	u32 red_type = enabled > 0 ? RED_BY_WA_ENABLE : RED_DISABLE;
-+	__le32 req = cpu_to_le32(red_type);
-+
-+	ret = mt76_mcu_send_msg(&dev->mt76, MCU_EXT_CMD(RED_ENABLE), &req,
-+				 sizeof(req), false);
-+	if (ret < 0)
-+		return ret;
-+
-+	mt7915_dbg_mcu_wa_cmd(dev, MCU_WA_PARAM_CMD(SET),
-+			  MCU_WA_PARAM_RED, enabled, 0, true);
-+
-+	return 0;
-+}
 +#endif
 +
  int mt7915_mcu_rf_regval(struct mt7915_dev *dev, u32 regidx, u32 *val, bool set)
  {
  	struct {
+@@ -3842,3 +3869,22 @@ int mt7915_mcu_rf_regval(struct mt7915_dev *dev, u32 regidx, u32 *val, bool set)
+ 
+ 	return 0;
+ }
++
++#ifdef MTK_DEBUG
++int mt7915_mcu_set_amsdu_algo(struct mt7915_dev *dev, u16 wcid, u8 enable)
++{
++	struct {
++		u16 action;
++		u8 _rsv1[2];
++		u16 wcid;
++		u8 enable;
++		u8 _rsv2[5];
++	} __packed req = {
++		.action = cpu_to_le16(1),
++		.wcid = cpu_to_le16(wcid),
++		.enable = enable,
++	};
++
++	return mt76_mcu_send_msg(&dev->mt76, MCU_EXT_CMD(MEC_CTRL), &req, sizeof(req), true);
++}
++#endif
 diff --git a/mt7915/mcu.h b/mt7915/mcu.h
-index b82f258..b2c51bf 100644
+index b9ea297..da86360 100644
 --- a/mt7915/mcu.h
 +++ b/mt7915/mcu.h
-@@ -259,6 +259,10 @@ enum {
+@@ -278,6 +278,10 @@ enum {
  	MCU_WA_PARAM_PDMA_RX = 0x04,
  	MCU_WA_PARAM_CPU_UTIL = 0x0b,
  	MCU_WA_PARAM_RED = 0x0e,
@@ -335,11 +353,11 @@ index b82f258..b2c51bf 100644
 +	MCU_WA_PARAM_RED_SHOW_STA = 0xf,
 +	MCU_WA_PARAM_RED_TARGET_DELAY = 0x10,
 +#endif
+ 	MCU_WA_PARAM_RED_SETTING = 0x40,
  };
  
- enum mcu_mmps_mode {
 diff --git a/mt7915/mt7915.h b/mt7915/mt7915.h
-index b6a6aa7..594f2fb 100644
+index 3cbfb9b..5fcc8ac 100644
 --- a/mt7915/mt7915.h
 +++ b/mt7915/mt7915.h
 @@ -9,6 +9,7 @@
@@ -350,7 +368,7 @@ index b6a6aa7..594f2fb 100644
  #define MT7915_MAX_INTERFACES		19
  #define MT7915_WTBL_SIZE		288
  #define MT7916_WTBL_SIZE		544
-@@ -338,6 +339,29 @@ struct mt7915_dev {
+@@ -373,6 +374,28 @@ struct mt7915_dev {
  	struct reset_control *rstc;
  	void __iomem *dcm;
  	void __iomem *sku;
@@ -373,16 +391,15 @@ index b6a6aa7..594f2fb 100644
 +		bool dump_rx_raw;
 +		u32 token_idx;
 +		u8 sku_disable;
-+		u8 muru_onoff;
 +	} dbg;
 +	const struct mt7915_dbg_reg_desc *dbg_reg;
 +#endif
  };
  
  enum {
-@@ -592,4 +616,23 @@ void mt7915_sta_add_debugfs(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
- 			    struct ieee80211_sta *sta, struct dentry *dir);
- #endif
+@@ -651,4 +674,24 @@ void mt7915_sta_add_debugfs(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
+ int mt7915_mmio_wed_init(struct mt7915_dev *dev, void *pdev_ptr,
+ 			 bool pci, int *irq);
  
 +#ifdef MTK_DEBUG
 +int mt7915_mtk_init_debugfs(struct mt7915_phy *phy, struct dentry *dir);
@@ -391,6 +408,7 @@ index b6a6aa7..594f2fb 100644
 +void mt7915_dump_tmac_info(u8 *tmac_info);
 +int mt7915_mcu_set_txpower_level(struct mt7915_phy *phy, u8 drop_level);
 +void mt7915_packet_log_to_host(struct mt7915_dev *dev, const void *data, int len, int type, int des_len);
++int mt7915_mcu_set_amsdu_algo(struct mt7915_dev *dev, u16 wcid, u8 enable);
 +
 +#define PKT_BIN_DEBUG_MAGIC	0xc8763123
 +enum {
@@ -406,10 +424,10 @@ index b6a6aa7..594f2fb 100644
  #endif
 diff --git a/mt7915/mt7915_debug.h b/mt7915/mt7915_debug.h
 new file mode 100644
-index 0000000..58ba2cd
+index 0000000..ca553dc
 --- /dev/null
 +++ b/mt7915/mt7915_debug.h
-@@ -0,0 +1,1350 @@
+@@ -0,0 +1,1363 @@
 +#ifndef __MT7915_DEBUG_H
 +#define __MT7915_DEBUG_H
 +
@@ -545,6 +563,8 @@ index 0000000..58ba2cd
 +	DBG_MIB_M0ARNG0,
 +	DBG_MIB_M0DR2,
 +	DBG_MIB_M0DR13,
++	DBG_WFDMA_WED_TX_CTRL,
++	DBG_WFDMA_WED_RX_CTRL,
 +	__MT_DBG_REG_REV_MAX,
 +};
 +
@@ -589,6 +609,8 @@ index 0000000..58ba2cd
 +
 +/* mt7915 regs with different base and offset */
 +static const struct __dbg_reg mt7915_dbg_reg[] = {
++	[DBG_WFDMA_WED_TX_CTRL]		= { MT_DBG_WFDMA_EXT_CSR_BASE, 0x300 },
++	[DBG_WFDMA_WED_RX_CTRL]		= { MT_DBG_WFDMA_EXT_CSR_BASE, 0x400 },
 +	[DBG_INT_SOURCE_CSR]		= { MT_DBG_WFDMA_EXT_CSR_BASE, 0x10 },
 +	[DBG_INT_MASK_CSR]		= { MT_DBG_WFDMA_EXT_CSR_BASE, 0x14 },
 +	[DBG_INT1_SOURCE_CSR]		= { MT_DBG_WFDMA_EXT_CSR_BASE, 0x88 },
@@ -693,6 +715,8 @@ index 0000000..58ba2cd
 +
 +/* mt7986/mt7916 regs with different base and offset */
 +static const struct __dbg_reg mt7916_dbg_reg[] = {
++	[DBG_WFDMA_WED_TX_CTRL]		= { MT_DBG_WFDMA_EXT_CSR_BASE, 0x300 },
++	[DBG_WFDMA_WED_RX_CTRL]		= { MT_DBG_WFDMA_EXT_CSR_BASE, 0x400 },
 +	[DBG_INT_SOURCE_CSR]		= { MT_DBG_WFDMA0_BASE, 0x200 },
 +	[DBG_INT_MASK_CSR]		= { MT_DBG_WFDMA0_BASE, 0x204 },
 +	[DBG_INT1_SOURCE_CSR]		= { MT_DBG_WFDMA0_PCIE1_BASE, 0x200 },
@@ -862,11 +886,15 @@ index 0000000..58ba2cd
 +#define MT_DBG_RX_EVENT_RING_BASE		__DBG_REG(dev, DBG_RX_EVENT_RING_BASE)
 +#define MT_DBG_RX_STS_RING_BASE			__DBG_REG(dev, DBG_RX_STS_RING_BASE)
 +#define MT_DBG_RX_DATA_RING_BASE		__DBG_REG(dev, DBG_RX_DATA_RING_BASE)
++#define MT_DBG_WFDMA_WED_TX_CTRL_BASE		__DBG_REG(dev, DBG_WFDMA_WED_TX_CTRL)
++#define MT_DBG_WFDMA_WED_RX_CTRL_BASE		__DBG_REG(dev, DBG_WFDMA_WED_RX_CTRL)
 +
 +#define MT_DBG_TX_RING_CTRL(n)			(MT_DBG_TX_RING_BASE + (0x10 * (n)))
 +#define MT_DBG_RX_DATA_RING_CTRL(n)		(MT_DBG_RX_DATA_RING_BASE + (0x10 * (n)))
 +#define MT_DBG_RX_EVENT_RING_CTRL(n)		(MT_DBG_RX_EVENT_RING_BASE + (0x10 * (n)))
 +
++#define MT_DBG_WFDMA_WED_TX_CTRL(n)		(MT_DBG_WFDMA_WED_TX_CTRL_BASE + (0x10 * (n)))
++#define MT_DBG_WFDMA_WED_RX_CTRL(n)		(MT_DBG_WFDMA_WED_RX_CTRL_BASE + (0x10 * (n)))
 +/* WFDMA COMMON */
 +#define MT_DBG_INT_SOURCE_CSR			__DBG_REG(dev, DBG_INT_SOURCE_CSR)
 +#define MT_DBG_INT_MASK_CSR			__DBG_REG(dev, DBG_INT_MASK_CSR)
@@ -1033,7 +1061,7 @@ index 0000000..58ba2cd
 +#define MT_DBG_UWTBL_TOP_BASE			0x820C4000
 +#define MT_DBG_UWTBL_TOP(ofs)			(MT_DBG_UWTBL_TOP_BASE + (ofs))
 +
-+#define MT_DBG_UWTBL_TOP_WDUCR			MT_DBG_WTBLON_TOP(__DBG_REG_OFFS(dev, DBG_UWTBL_WDUCR))
++#define MT_DBG_UWTBL_TOP_WDUCR			MT_DBG_UWTBL_TOP(__DBG_REG_OFFS(dev, DBG_UWTBL_WDUCR))
 +
 +#define MT_UWTBL_TOP_WDUCR_TARGET		BIT(31)
 +#define MT_UWTBL_TOP_WDUCR_GROUP		GENMASK(3, 0)
@@ -1459,6 +1487,7 @@ index 0000000..58ba2cd
 +	u16 max_rx_process_cnt;
 +	u16 max_sw_read_idx_inc;
 +	char *const ring_info;
++	bool flags;
 +};
 +
 +const struct hif_pci_tx_ring_desc mt7915_tx_ring_layout[] = {
@@ -1517,7 +1546,8 @@ index 0000000..58ba2cd
 +	 .hw_int_mask = MT_DBG_INT_DMA1_R1_DONE,
 +	 .ring_size = 1024,
 +	 .ring_attr = HIF_RX_EVENT,
-+	 .ring_info = "event from WA band0"
++	 .ring_info = "event from WA band0",
++	 .flags = true
 +	},
 +	{
 +	 .hw_int_mask = MT_DBG_INT_DMA1_R2_DONE,
@@ -1589,7 +1619,8 @@ index 0000000..58ba2cd
 +	 .hw_int_mask = MT_DBG_INT_DMA0_R2_DONE,
 +	 .ring_size = 1024,
 +	 .ring_attr = HIF_RX_EVENT,
-+	 .ring_info = "STS WA band0"
++	 .ring_info = "STS WA band0",
++	 .flags = true
 +	},
 +	{
 +	 .hw_int_mask = MT_DBG_INT_DMA0_R3_DONE,
@@ -1762,10 +1793,10 @@ index 0000000..58ba2cd
 +#endif
 diff --git a/mt7915/mtk_debugfs.c b/mt7915/mtk_debugfs.c
 new file mode 100644
-index 0000000..f18c8b6
+index 0000000..4fb845b
 --- /dev/null
 +++ b/mt7915/mtk_debugfs.c
-@@ -0,0 +1,2923 @@
+@@ -0,0 +1,3003 @@
 +#include<linux/inet.h>
 +#include "mt7915.h"
 +#include "mt7915_debug.h"
@@ -2508,11 +2539,19 @@ index 0000000..f18c8b6
 +		      "Name", "Base", "Cnt", "CIDX", "DIDX", "QCnt");
 +	dump_dma_tx_ring_info(s, dev, "T16:FWDL", MT_DBG_TX_RING_CTRL(0));
 +	dump_dma_tx_ring_info(s, dev, "T17:Cmd(H2WM)", MT_DBG_TX_RING_CTRL(1));
-+	dump_dma_tx_ring_info(s, dev, "T18:TXD0(H2WA)", MT_DBG_TX_RING_CTRL(2));
-+	dump_dma_tx_ring_info(s, dev, "T19:TXD1(H2WA)", MT_DBG_TX_RING_CTRL(3));
++	if (mtk_wed_device_active(&dev->mt76.mmio.wed)) {
++		dump_dma_tx_ring_info(s, dev, "T18:TXD0(H2WA)",  MT_DBG_WFDMA_WED_TX_CTRL(0));
++		dump_dma_tx_ring_info(s, dev, "T19:TXD1(H2WA)",  MT_DBG_WFDMA_WED_TX_CTRL(1));
++	} else {
++		dump_dma_tx_ring_info(s, dev, "T18:TXD0(H2WA)", MT_DBG_TX_RING_CTRL(2));
++		dump_dma_tx_ring_info(s, dev, "T19:TXD1(H2WA)", MT_DBG_TX_RING_CTRL(3));
++	}
 +	dump_dma_tx_ring_info(s, dev, "T20:Cmd(H2WA)", MT_DBG_TX_RING_CTRL(4));
 +	dump_dma_rx_ring_info(s, dev, "R0:Event(WM2H)", MT_DBG_RX_EVENT_RING_CTRL(0));
-+	dump_dma_rx_ring_info(s, dev, "R1:Event0(WA2H)", MT_DBG_RX_EVENT_RING_CTRL(1));
++	if (mtk_wed_device_active(&dev->mt76.mmio.wed))
++		dump_dma_rx_ring_info(s, dev, "R1:TxDone(WA2H)", MT_DBG_WFDMA_WED_RX_CTRL(1));
++	else
++		dump_dma_rx_ring_info(s, dev, "R1:Event0(WA2H)", MT_DBG_RX_EVENT_RING_CTRL(1));
 +	dump_dma_rx_ring_info(s, dev, "R2:Event1(WA2H)", MT_DBG_RX_EVENT_RING_CTRL(2));
 +
 +	seq_printf(s, "HOST_DMA1 PCIe 1 Ring Configuration\n");
@@ -2623,12 +2662,22 @@ index 0000000..f18c8b6
 +		      "Name", "Base", "Cnt", "CIDX", "DIDX", "QCnt");
 +	dump_dma_tx_ring_info(s, dev, "T16:FWDL", MT_DBG_TX_RING_CTRL(0));
 +	dump_dma_tx_ring_info(s, dev, "T17:Cmd(H2WM)",	MT_DBG_TX_RING_CTRL(1));
-+	dump_dma_tx_ring_info(s, dev, "T18:TXD0(H2WA)",  MT_DBG_TX_RING_CTRL(2));
-+	dump_dma_tx_ring_info(s, dev, "T19:TXD1(H2WA)",  MT_DBG_TX_RING_CTRL(3));
++
++	if (is_mt7916(&dev->mt76) && mtk_wed_device_active(&dev->mt76.mmio.wed)) {
++		dump_dma_tx_ring_info(s, dev, "T18:TXD0(H2WA)",  MT_DBG_WFDMA_WED_TX_CTRL(0));
++		dump_dma_tx_ring_info(s, dev, "T19:TXD1(H2WA)",  MT_DBG_WFDMA_WED_TX_CTRL(1));
++	} else {
++		dump_dma_tx_ring_info(s, dev, "T18:TXD0(H2WA)",  MT_DBG_TX_RING_CTRL(2));
++		dump_dma_tx_ring_info(s, dev, "T19:TXD1(H2WA)",  MT_DBG_TX_RING_CTRL(3));
++	}
++
 +	dump_dma_tx_ring_info(s, dev, "T20:Cmd(H2WA)",	MT_DBG_TX_RING_CTRL(4));
 +	dump_dma_rx_ring_info(s, dev, "R0:Event(WM2H)", MT_DBG_RX_DATA_RING_CTRL(0));
 +	dump_dma_rx_ring_info(s, dev, "R1:Event(WA2H)", MT_DBG_RX_EVENT_RING_CTRL(1));
-+	dump_dma_rx_ring_info(s, dev, "R2:TxDone(WA2H)", MT_DBG_RX_EVENT_RING_CTRL(2));
++	if (is_mt7916(&dev->mt76) && mtk_wed_device_active(&dev->mt76.mmio.wed))
++		dump_dma_rx_ring_info(s, dev, "R2:TxDone(WA2H)", MT_DBG_WFDMA_WED_RX_CTRL(1));
++	else
++		dump_dma_rx_ring_info(s, dev, "R2:TxDone(WA2H)", MT_DBG_RX_EVENT_RING_CTRL(2));
 +	dump_dma_rx_ring_info(s, dev, "R3:TxDone1(WA2H)", MT_DBG_RX_EVENT_RING_CTRL(3));
 +	dump_dma_rx_ring_info(s, dev, "R4:Data0(MAC2H)", MT_DBG_RX_DATA_RING_CTRL(0));
 +	dump_dma_rx_ring_info(s, dev, "R5:Data1(MAC2H)", MT_DBG_RX_DATA_RING_CTRL(1));
@@ -2719,12 +2768,14 @@ index 0000000..f18c8b6
 +	struct mt7915_dev *dev = dev_get_drvdata(s->private);
 +	const struct hif_pci_tx_ring_desc *tx_ring_layout;
 +	const struct hif_pci_rx_ring_desc *rx_ring_layout;
++	struct mtk_wed_device *wed = &dev->mt76.mmio.wed;
 +	u32 tx_ring_num, rx_ring_num;
 +	u32 tbase[5], tcnt[5];
 +	u32 tcidx[5], tdidx[5];
 +	u32 rbase[6], rcnt[6];
 +	u32 rcidx[6], rdidx[6];
 +	int idx;
++	bool flags = false;
 +
 +	if(is_mt7915(&dev->mt76)) {
 +		tx_ring_layout = &mt7915_tx_ring_layout[0];
@@ -2739,23 +2790,80 @@ index 0000000..f18c8b6
 +	}
 +
 +	for (idx = 0; idx < tx_ring_num; idx++) {
-+		tbase[idx] = mt76_rr(dev, MT_DBG_TX_RING_CTRL(idx));
-+		tcnt[idx]  = mt76_rr(dev, MT_DBG_TX_RING_CTRL(idx) + 0x04);
-+		tcidx[idx] = mt76_rr(dev, MT_DBG_TX_RING_CTRL(idx) + 0x08);
-+		tdidx[idx] = mt76_rr(dev, MT_DBG_TX_RING_CTRL(idx) + 0x0c);
++		if (mtk_wed_device_active(wed) &&
++		    (tx_ring_layout[idx].ring_attr == HIF_TX_DATA)) {
++			struct mt76_phy *phy = dev->mt76.phys[MT_BAND0];
++			struct mt76_phy *ext_phy = dev->mt76.phys[MT_BAND1];
++			struct mt76_queue *q;
++
++			tbase[idx] = tcnt[idx] = tcidx[idx] = tdidx[idx] = 0;
++
++			if (!phy)
++				continue;
++
++			if (flags && !ext_phy)
++				continue;
++
++			if (flags && ext_phy)
++				phy = ext_phy;
++
++			q = phy->q_tx[0];
++
++			if (q->wed_regs) {
++				tbase[idx] = mtk_wed_device_reg_read(wed, q->wed_regs);
++				tcnt[idx]  = mtk_wed_device_reg_read(wed, q->wed_regs + 0x04);
++				tcidx[idx] = mtk_wed_device_reg_read(wed, q->wed_regs + 0x08);
++				tdidx[idx] = mtk_wed_device_reg_read(wed, q->wed_regs + 0x0c);
++			}
++
++			flags = true;
++		} else {
++			tbase[idx] = mt76_rr(dev, MT_DBG_TX_RING_CTRL(idx));
++			tcnt[idx]  = mt76_rr(dev, MT_DBG_TX_RING_CTRL(idx) + 0x04);
++			tcidx[idx] = mt76_rr(dev, MT_DBG_TX_RING_CTRL(idx) + 0x08);
++			tdidx[idx] = mt76_rr(dev, MT_DBG_TX_RING_CTRL(idx) + 0x0c);}
 +	}
 +
 +	for (idx = 0; idx < rx_ring_num; idx++) {
-+		if (idx < 2) {
-+			rbase[idx] = mt76_rr(dev, MT_DBG_RX_DATA_RING_CTRL(idx));
-+			rcnt[idx]  = mt76_rr(dev, MT_DBG_RX_DATA_RING_CTRL(idx) + 0x04);
-+			rcidx[idx] = mt76_rr(dev, MT_DBG_RX_DATA_RING_CTRL(idx) + 0x08);
-+			rdidx[idx] = mt76_rr(dev, MT_DBG_RX_DATA_RING_CTRL(idx) + 0x0c);
++		if (rx_ring_layout[idx].ring_attr == HIF_RX_DATA) {
++			if (mtk_wed_device_active(wed) && mtk_wed_get_rx_capa(wed)) {
++				struct mt76_queue *q = &dev->mt76.q_rx[MT_RXQ_MAIN];
++
++				rbase[idx] = rcnt[idx] = rcidx[idx] = rdidx[idx] = 0;
++
++				if (idx == 1)
++					q = &dev->mt76.q_rx[MT_RXQ_BAND1];
++
++				if (q->wed_regs) {
++					rbase[idx] = mtk_wed_device_reg_read(wed, q->wed_regs);
++					rcnt[idx]  = mtk_wed_device_reg_read(wed, q->wed_regs + 0x04);
++					rcidx[idx] = mtk_wed_device_reg_read(wed, q->wed_regs + 0x08);
++					rdidx[idx] = mtk_wed_device_reg_read(wed, q->wed_regs + 0x0c);
++				}
++			} else {
++				rbase[idx] = mt76_rr(dev, MT_DBG_RX_DATA_RING_CTRL(idx));
++				rcnt[idx]  = mt76_rr(dev, MT_DBG_RX_DATA_RING_CTRL(idx) + 0x04);
++				rcidx[idx] = mt76_rr(dev, MT_DBG_RX_DATA_RING_CTRL(idx) + 0x08);
++				rdidx[idx] = mt76_rr(dev, MT_DBG_RX_DATA_RING_CTRL(idx) + 0x0c);
++			}
 +		} else {
-+			rbase[idx] = mt76_rr(dev, MT_DBG_RX_EVENT_RING_CTRL(idx - 2));
-+			rcnt[idx]  = mt76_rr(dev, MT_DBG_RX_EVENT_RING_CTRL(idx - 2) + 0x04);
-+			rcidx[idx] = mt76_rr(dev, MT_DBG_RX_EVENT_RING_CTRL(idx - 2) + 0x08);
-+			rdidx[idx] = mt76_rr(dev, MT_DBG_RX_EVENT_RING_CTRL(idx - 2) + 0x0c);
++			if (mtk_wed_device_active(wed) && rx_ring_layout[idx].flags) {
++				struct mt76_queue *q = &dev->mt76.q_rx[MT_RXQ_MAIN_WA];
++
++				if (is_mt7915(&dev->mt76))
++					q = &dev->mt76.q_rx[MT_RXQ_MCU_WA];
++
++				rbase[idx] = mtk_wed_device_reg_read(wed, q->wed_regs);
++				rcnt[idx]  = mtk_wed_device_reg_read(wed, q->wed_regs + 0x04);
++				rcidx[idx] = mtk_wed_device_reg_read(wed, q->wed_regs + 0x08);
++				rdidx[idx] = mtk_wed_device_reg_read(wed, q->wed_regs + 0x0c);
++
++			} else {
++				rbase[idx] = mt76_rr(dev, MT_DBG_RX_EVENT_RING_CTRL(idx - 2));
++				rcnt[idx]  = mt76_rr(dev, MT_DBG_RX_EVENT_RING_CTRL(idx - 2) + 0x04);
++				rcidx[idx] = mt76_rr(dev, MT_DBG_RX_EVENT_RING_CTRL(idx - 2) + 0x08);
++				rdidx[idx] = mt76_rr(dev, MT_DBG_RX_EVENT_RING_CTRL(idx - 2) + 0x0c);
++			}
 +		}
 +	}
 +
@@ -4149,7 +4257,8 @@ index 0000000..f18c8b6
 +
 +	if (txd->txd_2 & MT_TXD2_FIX_RATE) {
 +		/* Fixed BandWidth mode [2:0] */
-+		printk("\t\tbw = %ld\n", FIELD_GET(MT_TXD6_BW, txd->txd_6));
++		printk("\t\tbw = %ld\n",
++		       FIELD_GET(MT_TXD6_BW, txd->txd_6) | (txd->txd_6 & MT_TXD6_FIXED_BW));
 +
 +		/* DYN_BW [3] */
 +		printk("\t\tdyn_bw = %d\n", (txd->txd_6 & MT_TXD6_DYN_BW) ? 1 : 0);
@@ -4473,6 +4582,8 @@ index 0000000..f18c8b6
 +	u32 num = FIELD_GET(GENMASK(15, 8), tx_amsdu);
 +	u32 uwtbl;
 +
++	mt7915_mcu_set_amsdu_algo(dev, dev->wlan_idx, 0);
++
 +	mt7915_wtbl_read_raw(dev, dev->wlan_idx, WTBL_TYPE_UMAC,
 +			UWTBL_HW_AMSDU_DW, 1, &uwtbl);
 +
@@ -4691,7 +4802,7 @@ index 0000000..f18c8b6
 +#endif
 diff --git a/mt7915/mtk_mcu.c b/mt7915/mtk_mcu.c
 new file mode 100644
-index 0000000..145fe78
+index 0000000..143dae2
 --- /dev/null
 +++ b/mt7915/mtk_mcu.c
 @@ -0,0 +1,51 @@
@@ -4712,7 +4823,7 @@ index 0000000..145fe78
 +		u8 _rsv;
 +	} __packed req = {
 +		.format_id = 1,
-+		.band = phy->band_idx,
++		.band = phy->mt76->band_idx,
 +		.val = !!drop_level,
 +	};
 +	int ret;
@@ -4861,5 +4972,5 @@ index e5d4a10..3d51d9e 100644
  	return ret;
  }
 -- 
-2.18.0
+2.39.0
 

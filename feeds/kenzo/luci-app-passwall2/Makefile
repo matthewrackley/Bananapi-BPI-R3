@@ -1,12 +1,12 @@
-# Copyright (C) 2022 xiaorouji
+# Copyright (C) 2022-2023 xiaorouji
 #
 # This is free software, licensed under the GNU General Public License v3.
 
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=luci-app-passwall2
-PKG_VERSION:=1.3
-PKG_RELEASE:=21
+PKG_VERSION:=1.8
+PKG_RELEASE:=4
 
 PKG_CONFIG_DEPENDS:= \
 	CONFIG_PACKAGE_$(PKG_NAME)_Transparent_Proxy \
@@ -54,12 +54,13 @@ config PACKAGE_$(PKG_NAME)_Transparent_Proxy
 	select PACKAGE_dnsmasq-full
 	select PACKAGE_ipset
 	select PACKAGE_iptables
-	select PACKAGE_iptables-legacy
+	select PACKAGE_iptables-zz-legacy
 	select PACKAGE_iptables-mod-iprange
 	select PACKAGE_iptables-mod-socket
 	select PACKAGE_iptables-mod-tproxy
 	select PACKAGE_iptables-mod-conntrack-extra
 	select PACKAGE_kmod-ipt-nat
+	depends on PACKAGE_$(PKG_NAME)
 	default y
 
 config PACKAGE_$(PKG_NAME)_INCLUDE_Brook

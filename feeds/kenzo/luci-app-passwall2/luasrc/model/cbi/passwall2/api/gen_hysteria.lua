@@ -9,8 +9,6 @@ if not node_id then
     return
 end
 local node = uci:get_all("passwall2", node_id)
-local local_tcp_redir_port = var["-local_tcp_redir_port"]
-local local_udp_redir_port = var["-local_udp_redir_port"]
 local local_socks_address = var["-local_socks_address"] or "0.0.0.0"
 local local_socks_port = var["-local_socks_port"]
 local local_socks_username = var["-local_socks_username"]
@@ -27,6 +25,10 @@ if api.is_ipv6(server_host) then
 end
 local server = server_host .. ":" .. server_port
 
+if (node.hysteria_hop) then
+    server = server .. "," .. node.hysteria_hop
+end
+
 local config = {
     server = server,
     protocol = node.protocol or "udp",
@@ -42,7 +44,11 @@ local config = {
     retry_interval = 5,
     recv_window_conn = (node.hysteria_recv_window_conn) and tonumber(node.hysteria_recv_window_conn) or nil,
     recv_window = (node.hysteria_recv_window) and tonumber(node.hysteria_recv_window) or nil,
+    handshake_timeout = (node.hysteria_handshake_timeout) and tonumber(node.hysteria_handshake_timeout) or nil,
+    idle_timeout = (node.hysteria_idle_timeout) and tonumber(node.hysteria_idle_timeout) or nil,
+    hop_interval = (node.hysteria_hop_interval) and tonumber(node.hysteria_hop_interval) or nil,
     disable_mtu_discovery = (node.hysteria_disable_mtu_discovery) and true or false,
+    fast_open = (node.fast_open == "1") and true or false,
     socks5 = (local_socks_address and local_socks_port) and {
         listen = local_socks_address .. ":" .. local_socks_port,
         timeout = 300,
@@ -56,14 +62,6 @@ local config = {
         disable_udp = false,
         user = (local_http_username and local_http_password) and local_http_username,
         password = (local_http_username and local_http_password) and local_http_password,
-    } or nil,
-    tproxy_tcp = (local_tcp_redir_port) and {
-        listen = "0.0.0.0:" .. local_tcp_redir_port,
-        timeout = 300
-    } or nil,
-    tproxy_udp = (local_udp_redir_port) and {
-        listen = "0.0.0.0:" .. local_udp_redir_port,
-        timeout = 60
     } or nil
 }
 

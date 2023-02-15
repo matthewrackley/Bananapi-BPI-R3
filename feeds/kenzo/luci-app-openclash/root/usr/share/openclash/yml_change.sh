@@ -13,6 +13,9 @@ ipv6_dns=$(uci -q get openclash.config.ipv6_dns || echo 0)
 tolerance=$(uci -q get openclash.config.tolerance || echo 0)
 custom_fallback_filter=$(uci -q get openclash.config.custom_fallback_filter || echo 0)
 enable_meta_core=$(uci -q get openclash.config.enable_meta_core || echo 0)
+china_ip_route=$(uci -q get openclash.config.china_ip_route || echo 0)
+
+lan_block_google_dns=$(uci -q get openclash.config.lan_block_google_dns_ips || uci -q get openclash.config.lan_block_google_dns_macs || echo 0)
 
 if [ -n "$(ruby_read "$5" "['tun']")" ]; then
    uci -q set openclash.config.config_reload=0
@@ -34,13 +37,13 @@ else
    stack_type=${12}
 fi
 
-if [ "${22}" != "1" ]; then
+if [ "${21}" != "1" ]; then
    enable_geoip_dat="false"
 else
    enable_geoip_dat="true"
 fi
 
-if [ "${26}" != "1" ]; then
+if [ "${25}" != "1" ]; then
    enable_tcp_concurrent="false"
 else
    enable_tcp_concurrent="true"
@@ -65,6 +68,13 @@ fi
 
 uci commit openclash
 
+if [ "$1" = "fake-ip" ] && [ "$china_ip_route" = "1" ]; then
+   for i in `awk '!/^$/&&!/^#/&&!/(^([1-9]|1[0-9]|1[1-9]{2}|2[0-4][0-9]|25[0-5])\.)(([0-9]{1,2}|1[1-9]{2}|2[0-4][0-9]|25[0-5])\.){2}([1-9]|[1-9][0-9]|1[0-9]{2}|2[0-5][0-9]|25[0-4])((\/[0-9][0-9])?)$/{printf("%s\n",$0)}' /etc/openclash/custom/openclash_custom_chnroute_pass.list`
+   do
+      echo "$i" >> /tmp/openclash_fake_filter_include
+   done 2>/dev/null
+fi
+
 #获取认证信息
 yml_auth_get()
 {
@@ -81,6 +91,7 @@ yml_auth_get()
    if [ -z "$username" ] || [ -z "$password" ]; then
       return
    else
+      LOG_OUT "Tip: You have seted the authentication of SOCKS5/HTTP(S) proxy with【$username:$password】"
       echo "  - $username:$password" >>/tmp/yaml_openclash_auth
    fi
 }
@@ -91,7 +102,7 @@ yml_dns_custom()
    if [ "$1" = 1 ] || [ "$3" = 1 ]; then
    	sys_dns_append "$3" "$4"
       config_load "openclash"
-      config_foreach yml_dns_get "dns_servers"
+      config_foreach yml_dns_get "dns_servers" "$2"
    fi
 }
 
@@ -99,7 +110,7 @@ yml_dns_custom()
 sys_dns_append()
 {
    if [ "$1" = 1 ]; then
-   	wan_dns=$(/usr/share/openclash/openclash_get_network.lua "dns")
+      wan_dns=$(/usr/share/openclash/openclash_get_network.lua "dns")
       wan6_dns=$(/usr/share/openclash/openclash_get_network.lua "dns6")
       wan_gate=$(/usr/share/openclash/openclash_get_network.lua "gateway")
       wan6_gate=$(/usr/share/openclash/openclash_get_network.lua "gateway6")
@@ -174,6 +185,7 @@ yml_dns_get()
    config_get "interface" "$section" "interface" ""
    config_get "specific_group" "$section" "specific_group" ""
    config_get_bool "node_resolve" "$section" "node_resolve" "0"
+   config_get_bool "http3" "$section" "http3" "0"
 
    if [ "$enabled" = "0" ]; then
       return
@@ -200,7 +212,11 @@ yml_dns_get()
    fi
 
    if [ -n "$port" ] && [ -n "$ip" ]; then
-      dns_address="$ip:$port"
+      if [ ${ip%%/*} != ${ip#*/} ]; then
+         dns_address="${ip%%/*}:$port/${ip#*/}"
+      else
+         dns_address="$ip:$port"
+      fi
    elif [ -z "$port" ] && [ -n "$ip" ]; then
       dns_address="$ip"
    else
@@ -212,16 +228,27 @@ yml_dns_get()
       return
    fi
 
-   if [ "$node_resolve" = "1" ] && [ "$enable_meta_core" = "1" ]; then
-      if [ -z "$(grep "^ \{0,\}proxy-server-nameserver:$" /tmp/yaml_config.proxynamedns.yaml 2>/dev/null)" ]; then
-         echo "  proxy-server-nameserver:" >/tmp/yaml_config.proxynamedns.yaml
-      fi
-      echo "    - \"$dns_type$dns_address\"" >>/tmp/yaml_config.proxynamedns.yaml
-   elif [ "$node_resolve" = "1" ]; then
-      LOG_OUT "Warning: Only Meta Core Support proxy-server-nameserver, Skip Setting【$dns_type$dns_address】"
-   fi
-
    if [ "$specific_group" != "Disable" ] && [ -n "$specific_group" ] && [ "$enable_meta_core" = "1" ]; then
+      group_check=$(ruby -ryaml -rYAML -I "/usr/share/openclash" -E UTF-8 -e "
+      begin
+         Thread.new{
+            Value = YAML.load_file('$2');
+            Value['proxy-groups'].each{
+               |x|
+               if x['name'] == '$specific_group' then
+                  if (x.key?('use') and not x['use'].to_a.empty?) or (x.key?('proxies') and not x['proxies'].to_a.empty?) then
+                     puts 'return'
+                  end;
+               end;
+            };
+         }.join;
+      rescue Exception => e
+         puts 'return'
+      end;" 2>/dev/null)
+
+      if [ "$group_check" != "return" ]; then
+         /usr/share/openclash/yml_groups_set.sh >/dev/null 2>&1 "$specific_group"
+      fi
       specific_group="#$specific_group"
    elif [ "$specific_group" != "Disable" ] && [ -n "$specific_group" ]; then
       LOG_OUT "Warning: Only Meta Core Support Specific Group, Skip Setting【$dns_type$dns_address】"
@@ -239,7 +266,27 @@ yml_dns_get()
       interface=""
    fi
 
-   dns_address="$dns_address$interface$specific_group"
+   if [ "$http3" = "1" ] && [ "$enable_meta_core" = "1" ] && [ -n "$specific_group" ]; then
+      http3="&h3=true"
+   elif [ "$http3" = "1" ] && [ "$enable_meta_core" = "1" ] && [ -z "$specific_group" ]; then
+      http3="#h3=true"
+   elif [ "$http3" = "1" ] && [ "$enable_meta_core" != "1" ]; then
+      LOG_OUT "Warning: Only Meta Core Support Force HTTP/3 to connect, Skip Setting【$dns_type$dns_address】"
+      http3=""
+   else
+      http3=""
+   fi
+
+   if [ "$node_resolve" = "1" ] && [ "$enable_meta_core" = "1" ]; then
+      if [ -z "$(grep "^ \{0,\}proxy-server-nameserver:$" /tmp/yaml_config.proxynamedns.yaml 2>/dev/null)" ]; then
+         echo "  proxy-server-nameserver:" >/tmp/yaml_config.proxynamedns.yaml
+      fi
+      echo "    - \"$dns_type$dns_address$specific_group$http3\"" >>/tmp/yaml_config.proxynamedns.yaml
+   elif [ "$node_resolve" = "1" ]; then
+      LOG_OUT "Warning: Only Meta Core Support proxy-server-nameserver, Skip Setting【$dns_type$dns_address$specific_group$http3】"
+   fi
+
+   dns_address="$dns_address$interface$specific_group$http3"
 
    if [ -n "$group" ]; then
       if [ "$group" = "nameserver" ]; then
@@ -247,11 +294,16 @@ yml_dns_get()
             echo "  nameserver:" >/tmp/yaml_config.namedns.yaml
          fi
          echo "    - \"$dns_type$dns_address\"" >>/tmp/yaml_config.namedns.yaml
-      else
+      elif [ "$group" = "fallback" ]; then
          if [ -z "$(grep "^ \{0,\}fallback:$" /tmp/yaml_config.falldns.yaml 2>/dev/null)" ]; then
             echo "  fallback:" >/tmp/yaml_config.falldns.yaml
          fi
          echo "    - \"$dns_type$dns_address\"" >>/tmp/yaml_config.falldns.yaml
+      elif [ "$group" = "default" ]; then
+         if [ -z "$(grep "^ \{0,\}default-nameserver:$" /tmp/yaml_config.defaultdns.yaml 2>/dev/null)" ]; then
+            echo "  default-nameserver:" >/tmp/yaml_config.defaultdns.yaml
+         fi
+         echo "    - \"$dns_type$dns_address\"" >>/tmp/yaml_config.defaultdns.yaml
       fi
    else
       return
@@ -262,7 +314,8 @@ config_load "openclash"
 config_foreach yml_auth_get "authentication"
 yml_dns_custom "$enable_custom_dns" "$5" "$append_wan_dns" "${16}"
 
-ruby -ryaml -E UTF-8 -e "
+#配置文件覆写部分
+ruby -ryaml -rYAML -I "/usr/share/openclash" -E UTF-8 -e "
 begin
    Value = YAML.load_file('$5');
 rescue Exception => e
@@ -296,6 +349,8 @@ Thread.new{
    end;
 }.join;
 end;
+
+#General
 begin
 Thread.new{
    Value['redir-port']=$4;
@@ -315,21 +370,28 @@ Thread.new{
    else
       Value['ipv6']=false;
    end;
-   if '${25}' != '0' then
-      Value['interface-name']='${25}';
+   if '${24}' != '0' then
+      Value['interface-name']='${24}';
    else
       Value.delete('interface-name');
    end;
-   if ${21} == 1 then
+   if ${19} == 1 then
       Value['geodata-mode']=$enable_geoip_dat;
-      Value['geodata-loader']='${23}';
+      Value['geodata-loader']='${22}';
       Value['tcp-concurrent']=$enable_tcp_concurrent;
+      Value['find-process-mode']='${29}';
    else
       if Value.key?('geodata-mode') then
          Value.delete('geodata-mode');
-      end
+      end;
       if Value.key?('geodata-loader') then
          Value.delete('geodata-loader');
+      end;
+      if Value.key?('tcp-concurrent') then
+         Value.delete('tcp-concurrent');
+      end
+      if Value.key?('find-process-mode') then
+         Value.delete('find-process-mode');
       end
    end;
    if not Value.key?('dns') then
@@ -343,59 +405,107 @@ Thread.new{
    else
       Value['dns']['ipv6']=false;
    end;
-   if ${19} != 1 then
-      Value['dns']['enhanced-mode']='$1';
+   
+   #dev&tun core force fake-ip
+   if ${19} == 1 and '$1' == 'redir-host' then
+      Value['dns']['enhanced-mode']='redir-host';
+      Value['dns'].delete('fake-ip-range');
    else
       Value['dns']['enhanced-mode']='fake-ip';
+      Value['dns']['fake-ip-range']='${30}';
    end;
-   if '$1' == 'fake-ip' or ${19} == 1 then
-      Value['dns']['fake-ip-range']='198.18.0.1/16';
-   else
-      Value['dns'].delete('fake-ip-range');
-   end;
+
    Value['dns']['listen']='0.0.0.0:${13}';
+   
    #meta only
-   if ${20} == 1 and ${21} == 1 then
+   if ${19} == 1 and ${20} == 1 then
       Value_sniffer={'sniffer'=>{'enable'=>true}};
       Value['sniffer']=Value_sniffer['sniffer'];
-      Value_sniffer={'sniffing'=>['tls','http']};
-      Value['sniffer'].merge!(Value_sniffer);
-      if File::exist?('/etc/openclash/custom/openclash_force_sniffing_domain.yaml') and ${24} == 1 then
-         Value_7 = YAML.load_file('/etc/openclash/custom/openclash_force_sniffing_domain.yaml');
-         if Value_7 != false and not Value_7['force-domain'].to_a.empty? then
-            Value['sniffer']['force-domain']=Value_7['force-domain'];
-            Value['sniffer']['force-domain']=Value['sniffer']['force-domain'].uniq;
-         end
+      if '$1' == 'redir-host' then
+         Value['sniffer']['ForceDnsMapping']=true;
+      else
+         Value['sniffer']['ForceDnsMapping']=false;
       end;
-      if File::exist?('/etc/openclash/custom/openclash_sniffing_domain_filter.yaml') and ${24} == 1 then
-         Value_7 = YAML.load_file('/etc/openclash/custom/openclash_sniffing_domain_filter.yaml');
-         if Value_7 != false and not Value_7['skip-sni'].to_a.empty? then
-            Value['sniffer']['skip-domain']=Value_7['skip-sni'];
-            Value['sniffer']['skip-domain']=Value['sniffer']['skip-domain'].uniq;
-         end
-         if Value_7 != false and not Value_7['skip-domain'].to_a.empty? then
-            Value['sniffer']['skip-domain']=Value_7['skip-domain'];
-            Value['sniffer']['skip-domain']=Value['sniffer']['skip-domain'].uniq;
-         end
+      if ${28} == 1 then
+         Value['sniffer']['ParsePureIp']=true;
+      else
+         Value['sniffer']['ParsePureIp']=false;
       end;
-      if File::exist?('/etc/openclash/custom/openclash_sniffing_port_filter.yaml') and ${24} == 1 then
-         Value_7 = YAML.load_file('/etc/openclash/custom/openclash_sniffing_port_filter.yaml');
-         if Value_7 != false and not Value_7['port-whitelist'].to_a.empty? then
-            Value['sniffer']['port-whitelist']=Value_7['port-whitelist'];
-            Value['sniffer']['port-whitelist']=Value['sniffer']['port-whitelist'].uniq;
-         end
+      if File::exist?('/etc/openclash/custom/openclash_force_sniffing_domain.yaml') then
+         if ${23} == 1 then
+            Value_7 = YAML.load_file('/etc/openclash/custom/openclash_force_sniffing_domain.yaml');
+            if Value_7 != false and not Value_7['force-domain'].to_a.empty? then
+               Value['sniffer']['force-domain']=Value_7['force-domain'];
+               Value['sniffer']['force-domain']=Value['sniffer']['force-domain'].uniq;
+            end;
+         else
+            if not Value['sniffer'].key?('force-domain') then
+               Value_force_domain={'force-domain'=>['+.netflix.com', '+.nflxvideo.net', '+.amazonaws.com', '+.media.dssott.com']};
+               Value['sniffer'].merge!(Value_force_domain);
+            end;
+         end;
+      end;
+      if File::exist?('/etc/openclash/custom/openclash_sniffing_domain_filter.yaml') then
+         if ${23} == 1 then
+            Value_7 = YAML.load_file('/etc/openclash/custom/openclash_sniffing_domain_filter.yaml');
+            if Value_7 != false and not Value_7['skip-sni'].to_a.empty? then
+               Value['sniffer']['skip-domain']=Value_7['skip-sni'];
+               Value['sniffer']['skip-domain']=Value['sniffer']['skip-domain'].uniq;
+            end;
+            if Value_7 != false and not Value_7['skip-domain'].to_a.empty? then
+               Value['sniffer']['skip-domain']=Value_7['skip-domain'];
+               Value['sniffer']['skip-domain']=Value['sniffer']['skip-domain'].uniq;
+            end;
+         else
+            if not Value['sniffer'].key?('skip-domain') then
+               Value_skip_domain={'skip-domain'=>['+.apple.com', 'Mijia Cloud', '+.jd.com']};
+               Value['sniffer'].merge!(Value_skip_domain);
+            end;
+         end;
+      end;
+      if File::exist?('/etc/openclash/custom/openclash_sniffing_ports_filter.yaml') then
+         if ${23} == 1 then
+            Value_7 = YAML.load_file('/etc/openclash/custom/openclash_sniffing_ports_filter.yaml');
+            if Value_7 != false and not Value_7['sniff'].to_a.empty? then
+               Value['sniffer']['sniff']=Value_7['sniff'];
+            end;
+         else
+            if not Value['sniffer'].key?('sniff') then
+               Value_sniff={'sniff'=>{'TLS'=>nil, 'HTTP'=>{'ports'=>[80, '8080-8880'], 'override-destination'=>true}}};
+               Value['sniffer'].merge!(Value_sniff);
+            end;
+         end;
+      else
+         if File::exist?('/etc/openclash/custom/openclash_sniffing_port_filter.yaml') and ${23} == 1 then
+            Value_7 = YAML.load_file('/etc/openclash/custom/openclash_sniffing_port_filter.yaml');
+            if Value_7 != false and not Value_7['port-whitelist'].to_a.empty? then
+               Value['sniffer']['port-whitelist']=Value_7['port-whitelist'];
+               Value['sniffer']['port-whitelist']=Value['sniffer']['port-whitelist'].uniq;
+            end;
+         end;
+         Value_sniffer={'sniffing'=>['tls','http']};
+         Value['sniffer'].merge!(Value_sniffer);
       end;
    else
       if Value.key?('sniffer') then
          Value.delete('sniffer');
+      end;
+      if '${26}' == 'TUN' then
+         Value_tun_sniff={'experimental'=>{'sniff-tls-sni'=>true}};
+         Value['experimental'] = Value_tun_sniff['experimental'];
+      else
+         if Value.key?('experimental') then
+            Value.delete('experimental');
+         end;
       end;
    end;
    Value_2={'tun'=>{'enable'=>true}};
    if $en_mode_tun != 0 then
       Value['tun']=Value_2['tun'];
       Value['tun']['stack']='$stack_type';
-      if ${20} == 1 then
+      if ${19} == 1 then
          Value['tun']['device']='utun';
+         Value['tun']['mtu']=65535;
       end;
       Value_2={'dns-hijack'=>['tcp://any:53']};
       Value['tun']['auto-route']=false;
@@ -434,20 +544,26 @@ rescue Exception => e
    puts '${LOGTIME} Error: Set General Failed,【' + e.message + '】';
 end;
 
-#custom dns
+#Custom dns
 begin
 Thread.new{
    if '$enable_custom_dns' == '1' or '$append_wan_dns' == '1' then
       if File::exist?('/tmp/yaml_config.namedns.yaml') then
          Value_1 = YAML.load_file('/tmp/yaml_config.namedns.yaml');
-         Value_1['nameserver'] = Value_1['nameserver'].uniq;
-         Value['dns']['nameserver'] = Value_1['nameserver'];
-         if File::exist?('/tmp/yaml_config.falldns.yaml') then
-            Value_1 = YAML.load_file('/tmp/yaml_config.falldns.yaml');
-            Value_1['fallback'] = Value_1['fallback'].uniq;
-            Value['dns']['fallback'] = Value_1['fallback'];
+         if '$enable_custom_dns' == '1' then
+            Value['dns']['nameserver'] = Value_1['nameserver'].uniq;
+         elsif '$append_wan_dns' == '1' then
+            if Value['dns'].has_key?('nameserver') then
+               Value['dns']['nameserver'] = Value['dns']['nameserver'] | Value_1['nameserver'];
+            else
+               Value['dns']['nameserver'] = Value_1['nameserver'].uniq;
+            end;
          end;
-      else
+         if File::exist?('/tmp/yaml_config.falldns.yaml') and '$enable_custom_dns' == '1' then
+            Value_2 = YAML.load_file('/tmp/yaml_config.falldns.yaml');
+            Value['dns']['fallback'] = Value_2['fallback'].uniq;
+         end;
+      elsif '$enable_custom_dns' == '1' then
          puts '${LOGTIME} Error: Nameserver Option Must Be Setted, Stop Customing DNS Servers';
       end;
    end;
@@ -470,28 +586,40 @@ end;
 #default-nameserver
 begin
 Thread.new{
-   if ${20} == 1 then
-      reg = /(^https:\/\/|^tls:\/\/|^quic:\/\/)?((\d|[1-9]\d|1\d\d|2[0-4]\d|25[0-5])\.){3}(\d|[1-9]\d|1\d\d|2[0-4]\d|25[0-5])(?::(?:[0-9]|[1-9][0-9]{1,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5]))?/;
-      reg6 = /(^https:\/\/|^tls:\/\/|^quic:\/\/)?(?:(?:(?:[0-9A-Fa-f]{1,4}:){7}[0-9A-Fa-f]{1,4})|(([0-9A-Fa-f]{1,4}:){6}:[0-9A-Fa-f]{1,4})|(([0-9A-Fa-f]{1,4}:){5}:([0-9A-Fa-f]{1,4}:)?[0-9A-Fa-f]{1,4})|(([0-9A-Fa-f]{1,4}:){4}:([0-9A-Fa-f]{1,4}:){0,2}[0-9A-Fa-f]{1,4})|(([0-9A-Fa-f]{1,4}:){3}:([0-9A-Fa-f]{1,4}:){0,3}[0-9A-Fa-f]{1,4})|(([0-9A-Fa-f]{1,4}:){2}:([0-9A-Fa-f]{1,4}:){0,4}[0-9A-Fa-f]{1,4})|(([0-9A-Fa-f]{1,4}:){6}((\b((25[0-5])|(1\d{2})|(2[0-4]\d)|(\d{1,2}))\b)\.){3}(\b((25[0-5])|(1\d{2})|(2[0-4]\d)|(\d{1,2}))\b))|(([0-9A-Fa-f]{1,4}:){0,5}:((\b((25[0-5])|(1\d{2})|(2[0-4]\d)|(\d{1,2}))\b)\.){3}(\b((25[0-5])|(1\d{2})|(2[0-4]\d)|(\d{1,2}))\b))|(::([0-9A-Fa-f]{1,4}:){0,5}((\b((25[0-5])|(1\d{2})|(2[0-4]\d)|(\d{1,2}))\b)\.){3}(\b((25[0-5])|(1\d{2})|(2[0-4]\d)|(\d{1,2}))\b))|([0-9A-Fa-f]{1,4}::([0-9A-Fa-f]{1,4}:){0,5}[0-9A-Fa-f]{1,4})|(::([0-9A-Fa-f]{1,4}:){0,6}[0-9A-Fa-f]{1,4})|(([0-9A-Fa-f]{1,4}:){1,7}:))|\[(?:(?:(?:[0-9A-Fa-f]{1,4}:){7}[0-9A-Fa-f]{1,4})|(([0-9A-Fa-f]{1,4}:){6}:[0-9A-Fa-f]{1,4})|(([0-9A-Fa-f]{1,4}:){5}:([0-9A-Fa-f]{1,4}:)?[0-9A-Fa-f]{1,4})|(([0-9A-Fa-f]{1,4}:){4}:([0-9A-Fa-f]{1,4}:){0,2}[0-9A-Fa-f]{1,4})|(([0-9A-Fa-f]{1,4}:){3}:([0-9A-Fa-f]{1,4}:){0,3}[0-9A-Fa-f]{1,4})|(([0-9A-Fa-f]{1,4}:){2}:([0-9A-Fa-f]{1,4}:){0,4}[0-9A-Fa-f]{1,4})|(([0-9A-Fa-f]{1,4}:){6}((\b((25[0-5])|(1\d{2})|(2[0-4]\d)|(\d{1,2}))\b)\.){3}(\b((25[0-5])|(1\d{2})|(2[0-4]\d)|(\d{1,2}))\b))|(([0-9A-Fa-f]{1,4}:){0,5}:((\b((25[0-5])|(1\d{2})|(2[0-4]\d)|(\d{1,2}))\b)\.){3}(\b((25[0-5])|(1\d{2})|(2[0-4]\d)|(\d{1,2}))\b))|(::([0-9A-Fa-f]{1,4}:){0,5}((\b((25[0-5])|(1\d{2})|(2[0-4]\d)|(\d{1,2}))\b)\.){3}(\b((25[0-5])|(1\d{2})|(2[0-4]\d)|(\d{1,2}))\b))|([0-9A-Fa-f]{1,4}::([0-9A-Fa-f]{1,4}:){0,5}[0-9A-Fa-f]{1,4})|(::([0-9A-Fa-f]{1,4}:){0,6}[0-9A-Fa-f]{1,4})|(([0-9A-Fa-f]{1,4}:){1,7}:))\](?::(?:[0-9]|[1-9][0-9]{1,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5]))?/i;
-   else
-      reg = /^((\d|[1-9]\d|1\d\d|2[0-4]\d|25[0-5])\.){3}(\d|[1-9]\d|1\d\d|2[0-4]\d|25[0-5])(?::(?:[0-9]|[1-9][0-9]{1,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5]))?$/;
-      reg6 = /^(?:(?:(?:[0-9A-Fa-f]{1,4}:){7}[0-9A-Fa-f]{1,4})|(([0-9A-Fa-f]{1,4}:){6}:[0-9A-Fa-f]{1,4})|(([0-9A-Fa-f]{1,4}:){5}:([0-9A-Fa-f]{1,4}:)?[0-9A-Fa-f]{1,4})|(([0-9A-Fa-f]{1,4}:){4}:([0-9A-Fa-f]{1,4}:){0,2}[0-9A-Fa-f]{1,4})|(([0-9A-Fa-f]{1,4}:){3}:([0-9A-Fa-f]{1,4}:){0,3}[0-9A-Fa-f]{1,4})|(([0-9A-Fa-f]{1,4}:){2}:([0-9A-Fa-f]{1,4}:){0,4}[0-9A-Fa-f]{1,4})|(([0-9A-Fa-f]{1,4}:){6}((\b((25[0-5])|(1\d{2})|(2[0-4]\d)|(\d{1,2}))\b)\.){3}(\b((25[0-5])|(1\d{2})|(2[0-4]\d)|(\d{1,2}))\b))|(([0-9A-Fa-f]{1,4}:){0,5}:((\b((25[0-5])|(1\d{2})|(2[0-4]\d)|(\d{1,2}))\b)\.){3}(\b((25[0-5])|(1\d{2})|(2[0-4]\d)|(\d{1,2}))\b))|(::([0-9A-Fa-f]{1,4}:){0,5}((\b((25[0-5])|(1\d{2})|(2[0-4]\d)|(\d{1,2}))\b)\.){3}(\b((25[0-5])|(1\d{2})|(2[0-4]\d)|(\d{1,2}))\b))|([0-9A-Fa-f]{1,4}::([0-9A-Fa-f]{1,4}:){0,5}[0-9A-Fa-f]{1,4})|(::([0-9A-Fa-f]{1,4}:){0,6}[0-9A-Fa-f]{1,4})|(([0-9A-Fa-f]{1,4}:){1,7}:))|\[(?:(?:(?:[0-9A-Fa-f]{1,4}:){7}[0-9A-Fa-f]{1,4})|(([0-9A-Fa-f]{1,4}:){6}:[0-9A-Fa-f]{1,4})|(([0-9A-Fa-f]{1,4}:){5}:([0-9A-Fa-f]{1,4}:)?[0-9A-Fa-f]{1,4})|(([0-9A-Fa-f]{1,4}:){4}:([0-9A-Fa-f]{1,4}:){0,2}[0-9A-Fa-f]{1,4})|(([0-9A-Fa-f]{1,4}:){3}:([0-9A-Fa-f]{1,4}:){0,3}[0-9A-Fa-f]{1,4})|(([0-9A-Fa-f]{1,4}:){2}:([0-9A-Fa-f]{1,4}:){0,4}[0-9A-Fa-f]{1,4})|(([0-9A-Fa-f]{1,4}:){6}((\b((25[0-5])|(1\d{2})|(2[0-4]\d)|(\d{1,2}))\b)\.){3}(\b((25[0-5])|(1\d{2})|(2[0-4]\d)|(\d{1,2}))\b))|(([0-9A-Fa-f]{1,4}:){0,5}:((\b((25[0-5])|(1\d{2})|(2[0-4]\d)|(\d{1,2}))\b)\.){3}(\b((25[0-5])|(1\d{2})|(2[0-4]\d)|(\d{1,2}))\b))|(::([0-9A-Fa-f]{1,4}:){0,5}((\b((25[0-5])|(1\d{2})|(2[0-4]\d)|(\d{1,2}))\b)\.){3}(\b((25[0-5])|(1\d{2})|(2[0-4]\d)|(\d{1,2}))\b))|([0-9A-Fa-f]{1,4}::([0-9A-Fa-f]{1,4}:){0,5}[0-9A-Fa-f]{1,4})|(::([0-9A-Fa-f]{1,4}:){0,6}[0-9A-Fa-f]{1,4})|(([0-9A-Fa-f]{1,4}:){1,7}:))\](?::(?:[0-9]|[1-9][0-9]{1,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5]))?$/i;
-   end;
-   if Value['dns'].has_key?('fallback') then
-      Value_1=Value['dns']['nameserver'] | Value['dns']['fallback'];
-   else
-      Value_1=Value['dns']['nameserver'];
-   end;
-   Value_1.each{|x|
-      if x =~ reg or x =~ reg6 then
+   if '$enable_custom_dns' == '1' then
+      if File::exist?('/tmp/yaml_config.defaultdns.yaml') then
+         Value_1 = YAML.load_file('/tmp/yaml_config.defaultdns.yaml');
          if Value['dns'].has_key?('default-nameserver') then
-            Value['dns']['default-nameserver']=Value['dns']['default-nameserver'].to_a.insert(-1,x).uniq;
+            Value['dns']['default-nameserver'] = Value['dns']['default-nameserver'] | Value_1['default-nameserver'];
          else
-            Value_2={'default-nameserver'=>[x]};
-            Value['dns'].merge!(Value_2);
+            Value['dns']['default-nameserver'] = Value_1['default-nameserver'].uniq;
          end;
       end;
+   end;
+   if ${27} == 1 then
+      if ${19} == 1 then
+         reg = /(^https:\/\/|^tls:\/\/|^quic:\/\/)?((\d|[1-9]\d|1\d\d|2[0-4]\d|25[0-5])\.){3}(\d|[1-9]\d|1\d\d|2[0-4]\d|25[0-5])(?::(?:[0-9]|[1-9][0-9]{1,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5]))?/;
+         reg6 = /(^https:\/\/|^tls:\/\/|^quic:\/\/)?(?:(?:(?:[0-9A-Fa-f]{1,4}:){7}[0-9A-Fa-f]{1,4})|(([0-9A-Fa-f]{1,4}:){6}:[0-9A-Fa-f]{1,4})|(([0-9A-Fa-f]{1,4}:){5}:([0-9A-Fa-f]{1,4}:)?[0-9A-Fa-f]{1,4})|(([0-9A-Fa-f]{1,4}:){4}:([0-9A-Fa-f]{1,4}:){0,2}[0-9A-Fa-f]{1,4})|(([0-9A-Fa-f]{1,4}:){3}:([0-9A-Fa-f]{1,4}:){0,3}[0-9A-Fa-f]{1,4})|(([0-9A-Fa-f]{1,4}:){2}:([0-9A-Fa-f]{1,4}:){0,4}[0-9A-Fa-f]{1,4})|(([0-9A-Fa-f]{1,4}:){6}((\b((25[0-5])|(1\d{2})|(2[0-4]\d)|(\d{1,2}))\b)\.){3}(\b((25[0-5])|(1\d{2})|(2[0-4]\d)|(\d{1,2}))\b))|(([0-9A-Fa-f]{1,4}:){0,5}:((\b((25[0-5])|(1\d{2})|(2[0-4]\d)|(\d{1,2}))\b)\.){3}(\b((25[0-5])|(1\d{2})|(2[0-4]\d)|(\d{1,2}))\b))|(::([0-9A-Fa-f]{1,4}:){0,5}((\b((25[0-5])|(1\d{2})|(2[0-4]\d)|(\d{1,2}))\b)\.){3}(\b((25[0-5])|(1\d{2})|(2[0-4]\d)|(\d{1,2}))\b))|([0-9A-Fa-f]{1,4}::([0-9A-Fa-f]{1,4}:){0,5}[0-9A-Fa-f]{1,4})|(::([0-9A-Fa-f]{1,4}:){0,6}[0-9A-Fa-f]{1,4})|(([0-9A-Fa-f]{1,4}:){1,7}:))|\[(?:(?:(?:[0-9A-Fa-f]{1,4}:){7}[0-9A-Fa-f]{1,4})|(([0-9A-Fa-f]{1,4}:){6}:[0-9A-Fa-f]{1,4})|(([0-9A-Fa-f]{1,4}:){5}:([0-9A-Fa-f]{1,4}:)?[0-9A-Fa-f]{1,4})|(([0-9A-Fa-f]{1,4}:){4}:([0-9A-Fa-f]{1,4}:){0,2}[0-9A-Fa-f]{1,4})|(([0-9A-Fa-f]{1,4}:){3}:([0-9A-Fa-f]{1,4}:){0,3}[0-9A-Fa-f]{1,4})|(([0-9A-Fa-f]{1,4}:){2}:([0-9A-Fa-f]{1,4}:){0,4}[0-9A-Fa-f]{1,4})|(([0-9A-Fa-f]{1,4}:){6}((\b((25[0-5])|(1\d{2})|(2[0-4]\d)|(\d{1,2}))\b)\.){3}(\b((25[0-5])|(1\d{2})|(2[0-4]\d)|(\d{1,2}))\b))|(([0-9A-Fa-f]{1,4}:){0,5}:((\b((25[0-5])|(1\d{2})|(2[0-4]\d)|(\d{1,2}))\b)\.){3}(\b((25[0-5])|(1\d{2})|(2[0-4]\d)|(\d{1,2}))\b))|(::([0-9A-Fa-f]{1,4}:){0,5}((\b((25[0-5])|(1\d{2})|(2[0-4]\d)|(\d{1,2}))\b)\.){3}(\b((25[0-5])|(1\d{2})|(2[0-4]\d)|(\d{1,2}))\b))|([0-9A-Fa-f]{1,4}::([0-9A-Fa-f]{1,4}:){0,5}[0-9A-Fa-f]{1,4})|(::([0-9A-Fa-f]{1,4}:){0,6}[0-9A-Fa-f]{1,4})|(([0-9A-Fa-f]{1,4}:){1,7}:))\](?::(?:[0-9]|[1-9][0-9]{1,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5]))?/i;
+      else
+         reg = /^((\d|[1-9]\d|1\d\d|2[0-4]\d|25[0-5])\.){3}(\d|[1-9]\d|1\d\d|2[0-4]\d|25[0-5])(?::(?:[0-9]|[1-9][0-9]{1,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5]))?$/;
+         reg6 = /^(?:(?:(?:[0-9A-Fa-f]{1,4}:){7}[0-9A-Fa-f]{1,4})|(([0-9A-Fa-f]{1,4}:){6}:[0-9A-Fa-f]{1,4})|(([0-9A-Fa-f]{1,4}:){5}:([0-9A-Fa-f]{1,4}:)?[0-9A-Fa-f]{1,4})|(([0-9A-Fa-f]{1,4}:){4}:([0-9A-Fa-f]{1,4}:){0,2}[0-9A-Fa-f]{1,4})|(([0-9A-Fa-f]{1,4}:){3}:([0-9A-Fa-f]{1,4}:){0,3}[0-9A-Fa-f]{1,4})|(([0-9A-Fa-f]{1,4}:){2}:([0-9A-Fa-f]{1,4}:){0,4}[0-9A-Fa-f]{1,4})|(([0-9A-Fa-f]{1,4}:){6}((\b((25[0-5])|(1\d{2})|(2[0-4]\d)|(\d{1,2}))\b)\.){3}(\b((25[0-5])|(1\d{2})|(2[0-4]\d)|(\d{1,2}))\b))|(([0-9A-Fa-f]{1,4}:){0,5}:((\b((25[0-5])|(1\d{2})|(2[0-4]\d)|(\d{1,2}))\b)\.){3}(\b((25[0-5])|(1\d{2})|(2[0-4]\d)|(\d{1,2}))\b))|(::([0-9A-Fa-f]{1,4}:){0,5}((\b((25[0-5])|(1\d{2})|(2[0-4]\d)|(\d{1,2}))\b)\.){3}(\b((25[0-5])|(1\d{2})|(2[0-4]\d)|(\d{1,2}))\b))|([0-9A-Fa-f]{1,4}::([0-9A-Fa-f]{1,4}:){0,5}[0-9A-Fa-f]{1,4})|(::([0-9A-Fa-f]{1,4}:){0,6}[0-9A-Fa-f]{1,4})|(([0-9A-Fa-f]{1,4}:){1,7}:))|\[(?:(?:(?:[0-9A-Fa-f]{1,4}:){7}[0-9A-Fa-f]{1,4})|(([0-9A-Fa-f]{1,4}:){6}:[0-9A-Fa-f]{1,4})|(([0-9A-Fa-f]{1,4}:){5}:([0-9A-Fa-f]{1,4}:)?[0-9A-Fa-f]{1,4})|(([0-9A-Fa-f]{1,4}:){4}:([0-9A-Fa-f]{1,4}:){0,2}[0-9A-Fa-f]{1,4})|(([0-9A-Fa-f]{1,4}:){3}:([0-9A-Fa-f]{1,4}:){0,3}[0-9A-Fa-f]{1,4})|(([0-9A-Fa-f]{1,4}:){2}:([0-9A-Fa-f]{1,4}:){0,4}[0-9A-Fa-f]{1,4})|(([0-9A-Fa-f]{1,4}:){6}((\b((25[0-5])|(1\d{2})|(2[0-4]\d)|(\d{1,2}))\b)\.){3}(\b((25[0-5])|(1\d{2})|(2[0-4]\d)|(\d{1,2}))\b))|(([0-9A-Fa-f]{1,4}:){0,5}:((\b((25[0-5])|(1\d{2})|(2[0-4]\d)|(\d{1,2}))\b)\.){3}(\b((25[0-5])|(1\d{2})|(2[0-4]\d)|(\d{1,2}))\b))|(::([0-9A-Fa-f]{1,4}:){0,5}((\b((25[0-5])|(1\d{2})|(2[0-4]\d)|(\d{1,2}))\b)\.){3}(\b((25[0-5])|(1\d{2})|(2[0-4]\d)|(\d{1,2}))\b))|([0-9A-Fa-f]{1,4}::([0-9A-Fa-f]{1,4}:){0,5}[0-9A-Fa-f]{1,4})|(::([0-9A-Fa-f]{1,4}:){0,6}[0-9A-Fa-f]{1,4})|(([0-9A-Fa-f]{1,4}:){1,7}:))\](?::(?:[0-9]|[1-9][0-9]{1,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5]))?$/i;
+      end;
+      if Value['dns'].has_key?('fallback') then
+         Value_1=Value['dns']['nameserver'] | Value['dns']['fallback'];
+      else
+         Value_1=Value['dns']['nameserver'];
+      end;
+      Value_1.each{|x|
+         if x =~ reg or x =~ reg6 then
+            if Value['dns'].has_key?('default-nameserver') then
+               Value['dns']['default-nameserver']=Value['dns']['default-nameserver'].to_a.insert(-1,x).uniq;
+            else
+               Value_2={'default-nameserver'=>[x]};
+               Value['dns'].merge!(Value_2);
+            end;
+         end;
       };
+   end;
 }.join;
 rescue Exception => e
    puts '${LOGTIME} Error: Set default-nameserver Failed,【' + e.message + '】';
@@ -551,24 +679,24 @@ begin
 Thread.new{
    if '$1' == 'fake-ip' then
       if File::exist?('/etc/openclash/custom/openclash_custom_fake_filter.list') then
-         begin
-            Value_4 = YAML.load_file('/etc/openclash/custom/openclash_custom_fake_filter.list');
-            if Value_4 != false and not Value_4['fake-ip-filter'].to_a.empty? then
-               if Value['dns'].has_key?('fake-ip-filter') and not Value['dns']['fake-ip-filter'].to_a.empty? then
-                  Value['dns']['fake-ip-filter'] = Value['dns']['fake-ip-filter'] | Value_4;
-               else
-                  Value['dns']['fake-ip-filter'] = Value_4['fake-ip-filter'];
-               end;
+         Value_4 = IO.readlines('/etc/openclash/custom/openclash_custom_fake_filter.list');
+         if not Value_4.empty? then
+            Value_4 = Value_4.map!{|x| x.gsub(/#.*$/,'').strip} - ['', nil];
+            if Value['dns'].has_key?('fake-ip-filter') and not Value['dns']['fake-ip-filter'].to_a.empty? then
+               Value['dns']['fake-ip-filter'] = Value['dns']['fake-ip-filter'] | Value_4;
+            else
+               Value['dns']['fake-ip-filter'] = Value_4;
             end;
-         rescue
-            Value_4 = IO.readlines('/etc/openclash/custom/openclash_custom_fake_filter.list');
-            if not Value_4.empty? then
-               Value_4 = Value_4.map!{|x| x.gsub(/#.*$/,'').strip} - ['', nil];
-               if Value['dns'].has_key?('fake-ip-filter') and not Value['dns']['fake-ip-filter'].to_a.empty? then
-                  Value['dns']['fake-ip-filter'] = Value['dns']['fake-ip-filter'] | Value_4;
-               else
-                  Value['dns']['fake-ip-filter'] = Value_4;
-               end;
+         end;
+      end;
+      if File::exist?('/tmp/openclash_fake_filter_include') then
+         Value_4 = IO.readlines('/tmp/openclash_fake_filter_include');
+         if not Value_4.empty? then
+            Value_4 = Value_4.map!{|x| x.gsub(/#.*$/,'').strip} - ['', nil];
+            if Value['dns'].has_key?('fake-ip-filter') and not Value['dns']['fake-ip-filter'].to_a.empty? then
+               Value['dns']['fake-ip-filter'] = Value['dns']['fake-ip-filter'] | Value_4;
+            else
+               Value['dns']['fake-ip-filter'] = Value_4;
             end;
          end;
       end;
@@ -581,7 +709,15 @@ Thread.new{
             Value['dns'].merge!({'fake-ip-filter'=>['+.nflxvideo.net', '+.media.dssott.com']});
          end;
       end;
-   elsif ${19} == 1 then
+      if '$lan_block_google_dns' != '0' then
+         if Value['dns'].has_key?('fake-ip-filter') and not Value['dns']['fake-ip-filter'].to_a.empty? then
+            Value['dns']['fake-ip-filter'].insert(-1,'+.dns.google');
+            Value['dns']['fake-ip-filter']=Value['dns']['fake-ip-filter'].uniq;
+         else
+            Value['dns'].merge!({'fake-ip-filter'=>['+.dns.google']});
+         end;
+      end;
+   elsif ${19} != 1 then
       if Value['dns'].has_key?('fake-ip-filter') and not Value['dns']['fake-ip-filter'].to_a.empty? then
          Value['dns']['fake-ip-filter'].insert(-1,'+.*');
          Value['dns']['fake-ip-filter']=Value['dns']['fake-ip-filter'].uniq;
@@ -608,6 +744,7 @@ Thread.new{
                Value['hosts']=Value_3;
             end;
             Value['hosts'].uniq;
+            puts '${LOGTIME} Warning: You May Need to Turn off The Rebinding Protection Option of Dnsmasq When Hosts Has Set a Reserved Address';
          end;
       rescue
          Value_3 = IO.readlines('/etc/openclash/custom/openclash_custom_hosts.list');
@@ -620,6 +757,7 @@ Thread.new{
                Value_3.each{|x| Value['hosts'].merge!(x)};
             end;
             Value['hosts'].uniq;
+            puts '${LOGTIME} Warning: You May Need to Turn off The Rebinding Protection Option of Dnsmasq When Hosts Has Set a Reserved Address';
          end;
       end;
    end;
@@ -628,6 +766,7 @@ rescue Exception => e
    puts '${LOGTIME} Error: Set Hosts Rules Failed,【' + e.message + '】';
 end;
 
+#tolerance
 begin
 Thread.new{
    if '$tolerance' != '0' then
@@ -700,6 +839,48 @@ Thread.new{
 }.join;
 rescue Exception => e
    puts '${LOGTIME} Error: Edit Vmess Compatible Failed,【' + e.message + '】';
+end;
+
+#client-fingerprint
+begin
+Thread.new{
+   if '${31}' != '0' and ${19} == 1 then
+      if Value.key?('proxies') and not Value['proxies'].nil? then
+         Value['proxies'].each{
+         |x|
+            if x['type'] == 'vmess' or x['type'] == 'vless' or x['type'] == 'trojan' then
+               if x['client-fingerprint'] != '${31}' then
+                  x['client-fingerprint'] = '${31}';
+               end;
+            end;
+         };
+      end;
+      if Value.key?('proxy-providers') and not Value['proxy-providers'].nil? then
+         Value['proxy-providers'].values.each{
+         |x,p,v|
+            if x.key?('path') and not x['path'].empty? then
+               p = '/etc/openclash/proxy_provider/'+File.basename(x['path']);
+               if File::exist?(p) then
+                  v = YAML.load_file(p);
+                  if v.key?('proxies') and not v['proxies'].nil? then
+                     v['proxies'].each{
+                     |z|
+                        if z['type'] == 'vmess' or z['type'] == 'vless' or z['type'] == 'trojan' then
+                           if z['client-fingerprint'] != '${31}' then
+                              z['client-fingerprint'] = '${31}';
+                           end;
+                        end;
+                     };
+                  end;
+                  File.open(p,'w') {|f| YAML.dump(v, f)};
+               end;
+            end;
+         };
+      end;
+   end;
+}.join;
+rescue Exception => e
+   puts '${LOGTIME} Error: Edit Client-fingerprint Failed,【' + e.message + '】';
 ensure
    File.open('$5','w') {|f| YAML.dump(Value, f)};
 end" 2>/dev/null >> $LOG_FILE

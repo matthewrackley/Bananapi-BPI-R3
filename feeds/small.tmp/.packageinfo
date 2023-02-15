@@ -3,7 +3,7 @@ Build-Depends: golang/host
 
 Package: brook
 Submenu: Web Servers/Proxies
-Version: 20220707-3
+Version: 20230122-0
 Depends: +libc +USE_GLIBC:librt +USE_GLIBC:libpthread @(aarch64||arm||i386||i686||mips||mips64||mips64el||mipsel||powerpc64||x86_64) +ca-bundle
 Conflicts: 
 Menu-Depends: 
@@ -13,7 +13,7 @@ Category: Network
 Repository: base
 Title: A cross-platform proxy software
 Maintainer: Tianling Shen <cnsztl@immortalwrt.org>
-Source: brook-20220707.tar.gz
+Source: brook-20230122.tar.gz
 License: GPL-3.0
 LicenseFiles: LICENSE
 Type: ipkg
@@ -100,7 +100,7 @@ Source-Makefile: feeds/small/hysteria/Makefile
 Build-Depends: golang/host
 
 Package: hysteria
-Version: 1.0.5-0
+Version: 1.3.3-1
 Depends: +libc +USE_GLIBC:librt +USE_GLIBC:libpthread @(aarch64||arm||i386||i686||mips||mips64||mips64el||mipsel||powerpc64||x86_64) +ca-bundle
 Conflicts: 
 Menu-Depends: 
@@ -110,14 +110,14 @@ Category: Network
 Repository: base
 Title: A feature-packed network utility optimized for networks of poor quality
 Maintainer: Tianling Shen <cnsztl@immortalwrt.org>
-Source: hysteria-1.0.5.tar.gz
+Source: hysteria-1.3.3.tar.gz
 License: MIT
 Type: ipkg
 Description:   Hysteria is a feature-packed network utility optimized for networks
   of poor quality (e.g. satellite connections, congested public Wi-Fi,
   connecting from China to servers abroad) powered by a custom version
   of QUIC protocol.
-https://github.com/tobyxdd/hysteria
+https://github.com/apernet/hysteria
 Tianling Shen <cnsztl@immortalwrt.org>
 @@
 
@@ -171,141 +171,11 @@ Description:   pdnsd, is an IPv6 capable proxy DNS server with permanent caching
 @@
 
 
-Source-Makefile: feeds/small/shadowsocks-libev/Makefile
-Build-Depends: c-ares pcre
-
-Package: shadowsocks-libev-config
-Submenu: Web Servers/Proxies
-Version: 3.3.5-5
-Depends: +libc +USE_GLIBC:librt +USE_GLIBC:libpthread 
-Conflicts: 
-Menu-Depends: 
-Provides: 
-Section: net
-Category: Network
-Repository: base
-Title: shadowsocks-libev config scripts
-Maintainer: Yousong Zhou <yszhou4tech@gmail.com>
-Source: shadowsocks-libev-3.3.5.tar.gz
-License: GPL-3.0-or-later
-LicenseFiles: LICENSE
-Type: ipkg
-Description: shadowsocks-libev config scripts
-https://github.com/shadowsocks/shadowsocks-libev
-Yousong Zhou <yszhou4tech@gmail.com>
-@@
-
-Package: shadowsocks-libev-ss-rules
-Submenu: Web Servers/Proxies
-Version: 3.3.5-5
-Depends: +libc +USE_GLIBC:librt +USE_GLIBC:libpthread +firewall4 +ip +resolveip +ucode +ucode-mod-fs +shadowsocks-libev-ss-redir +shadowsocks-libev-config +kmod-nft-tproxy
-Conflicts: 
-Menu-Depends: 
-Provides: 
-Section: net
-Category: Network
-Repository: base
-Title: shadowsocks-libev ss-rules
-Maintainer: Yousong Zhou <yszhou4tech@gmail.com>
-Source: shadowsocks-libev-3.3.5.tar.gz
-License: GPL-3.0-or-later
-LicenseFiles: LICENSE
-Type: ipkg
-Description: shadowsocks-libev ss-rules
-https://github.com/shadowsocks/shadowsocks-libev
-Yousong Zhou <yszhou4tech@gmail.com>
-@@
-
-Package: shadowsocks-libev-ss-local
-Submenu: Web Servers/Proxies
-Version: 3.3.5-5
-Depends: +libc +USE_GLIBC:librt +USE_GLIBC:libpthread +libev +libmbedtls +libpthread +libsodium +shadowsocks-libev-config +libpcre
-Conflicts: 
-Menu-Depends: 
-Provides: 
-Section: net
-Category: Network
-Repository: base
-Title: shadowsocks-libev ss-local
-Maintainer: Yousong Zhou <yszhou4tech@gmail.com>
-Source: shadowsocks-libev-3.3.5.tar.gz
-License: GPL-3.0-or-later
-LicenseFiles: LICENSE
-Type: ipkg
-Description: shadowsocks-libev ss-local
-https://github.com/shadowsocks/shadowsocks-libev
-Yousong Zhou <yszhou4tech@gmail.com>
-@@
-
-Package: shadowsocks-libev-ss-redir
-Submenu: Web Servers/Proxies
-Version: 3.3.5-5
-Depends: +libc +USE_GLIBC:librt +USE_GLIBC:libpthread +libev +libmbedtls +libpthread +libsodium +shadowsocks-libev-config
-Conflicts: 
-Menu-Depends: 
-Provides: 
-Section: net
-Category: Network
-Repository: base
-Title: shadowsocks-libev ss-redir
-Maintainer: Yousong Zhou <yszhou4tech@gmail.com>
-Source: shadowsocks-libev-3.3.5.tar.gz
-License: GPL-3.0-or-later
-LicenseFiles: LICENSE
-Type: ipkg
-Description: shadowsocks-libev ss-redir
-https://github.com/shadowsocks/shadowsocks-libev
-Yousong Zhou <yszhou4tech@gmail.com>
-@@
-
-Package: shadowsocks-libev-ss-tunnel
-Submenu: Web Servers/Proxies
-Version: 3.3.5-5
-Depends: +libc +USE_GLIBC:librt +USE_GLIBC:libpthread +libev +libmbedtls +libpthread +libsodium +shadowsocks-libev-config
-Conflicts: 
-Menu-Depends: 
-Provides: 
-Section: net
-Category: Network
-Repository: base
-Title: shadowsocks-libev ss-tunnel
-Maintainer: Yousong Zhou <yszhou4tech@gmail.com>
-Source: shadowsocks-libev-3.3.5.tar.gz
-License: GPL-3.0-or-later
-LicenseFiles: LICENSE
-Type: ipkg
-Description: shadowsocks-libev ss-tunnel
-https://github.com/shadowsocks/shadowsocks-libev
-Yousong Zhou <yszhou4tech@gmail.com>
-@@
-
-Package: shadowsocks-libev-ss-server
-Submenu: Web Servers/Proxies
-Version: 3.3.5-5
-Depends: +libc +USE_GLIBC:librt +USE_GLIBC:libpthread +libev +libmbedtls +libpthread +libsodium +shadowsocks-libev-config +libcares +libpcre
-Conflicts: 
-Menu-Depends: 
-Provides: 
-Section: net
-Category: Network
-Repository: base
-Title: shadowsocks-libev ss-server
-Maintainer: Yousong Zhou <yszhou4tech@gmail.com>
-Source: shadowsocks-libev-3.3.5.tar.gz
-License: GPL-3.0-or-later
-LicenseFiles: LICENSE
-Type: ipkg
-Description: shadowsocks-libev ss-server
-https://github.com/shadowsocks/shadowsocks-libev
-Yousong Zhou <yszhou4tech@gmail.com>
-@@
-
-
 Source-Makefile: feeds/small/shadowsocks-rust/Makefile
 
 Package: shadowsocks-rust-sslocal
 Submenu: Web Servers/Proxies
-Version: 1.14.3-1
+Version: 1.15.2-1
 Depends: +libc +USE_GLIBC:librt +USE_GLIBC:libpthread @USE_MUSL @(aarch64||arm||i386||mips||mipsel||x86_64) @!(TARGET_x86_geode||TARGET_x86_legacy)
 Conflicts: 
 Menu-Depends: 
@@ -326,7 +196,7 @@ Tianling Shen <cnsztl@immortalwrt.org>
 
 Package: shadowsocks-rust-ssmanager
 Submenu: Web Servers/Proxies
-Version: 1.14.3-1
+Version: 1.15.2-1
 Depends: +libc +USE_GLIBC:librt +USE_GLIBC:libpthread @USE_MUSL @(aarch64||arm||i386||mips||mipsel||x86_64) @!(TARGET_x86_geode||TARGET_x86_legacy)
 Conflicts: 
 Menu-Depends: 
@@ -347,7 +217,7 @@ Tianling Shen <cnsztl@immortalwrt.org>
 
 Package: shadowsocks-rust-ssserver
 Submenu: Web Servers/Proxies
-Version: 1.14.3-1
+Version: 1.15.2-1
 Depends: +libc +USE_GLIBC:librt +USE_GLIBC:libpthread @USE_MUSL @(aarch64||arm||i386||mips||mipsel||x86_64) @!(TARGET_x86_geode||TARGET_x86_legacy)
 Conflicts: 
 Menu-Depends: 
@@ -368,7 +238,7 @@ Tianling Shen <cnsztl@immortalwrt.org>
 
 Package: shadowsocks-rust-ssurl
 Submenu: Web Servers/Proxies
-Version: 1.14.3-1
+Version: 1.15.2-1
 Depends: +libc +USE_GLIBC:librt +USE_GLIBC:libpthread @USE_MUSL @(aarch64||arm||i386||mips||mipsel||x86_64) @!(TARGET_x86_geode||TARGET_x86_legacy)
 Conflicts: 
 Menu-Depends: 
@@ -389,7 +259,7 @@ Tianling Shen <cnsztl@immortalwrt.org>
 
 Package: shadowsocks-rust-ssservice
 Submenu: Web Servers/Proxies
-Version: 1.14.3-1
+Version: 1.15.2-1
 Depends: +libc +USE_GLIBC:librt +USE_GLIBC:libpthread @USE_MUSL @(aarch64||arm||i386||mips||mipsel||x86_64) @!(TARGET_x86_geode||TARGET_x86_legacy)
 Conflicts: 
 Menu-Depends: 
@@ -520,44 +390,52 @@ https://github.com/shadowsocksrr/shadowsocksr-libev
 Source-Makefile: feeds/small/simple-obfs/Makefile
 Build-Depends: libev
 
-Package: simple-obfs-client
+Package: simple-obfs
 Version: 0.0.5-0
-Depends: +libc +USE_GLIBC:librt +USE_GLIBC:libpthread +libpthread +libev
-Conflicts: 
-Menu-Depends: 
-Provides: simple-obfs
-Section: net
-Category: Network
-Repository: base
-Title: A simple obfuscating tool (client)
-Maintainer: Jian Chang <aa65535@live.com>
-Source: simple-obfs-0.0.5.tar.xz
-License: GPL-3.0-or-later
-LicenseFiles: LICENSE
-Type: ipkg
-Description:   Simple-obfs is a simple obfusacting tool, designed as plugin server of shadowsocks.
-https://github.com/shadowsocks/simple-obfs
-Jian Chang <aa65535@live.com>
-@@
-
-Package: simple-obfs-server
-Version: 0.0.5-0
-Depends: +libc +USE_GLIBC:librt +USE_GLIBC:libpthread +libpthread +libev
+Depends: +libc +USE_GLIBC:librt +USE_GLIBC:libpthread +libpthread +!SIMPLE_OBFS_STATIC_LINK:libev
 Conflicts: 
 Menu-Depends: 
 Provides: 
 Section: net
 Category: Network
 Repository: base
-Title: A simple obfuscating tool (server)
+Title: Simple-obfs
 Maintainer: Jian Chang <aa65535@live.com>
-Source: simple-obfs-0.0.5.tar.xz
+Source: simple-obfs-0.0.5-486bebd9208539058e57e23a12f23103016e09b4.tar.gz
 License: GPL-3.0-or-later
-LicenseFiles: LICENSE
+LicenseFiles: COPYING LICENSE
 Type: ipkg
-Description:   Simple-obfs is a simple obfusacting tool, designed as plugin server of shadowsocks.
+Description: Simple-obfs is a simple obfusacting tool, designed as plugin server of shadowsocks.
 https://github.com/shadowsocks/simple-obfs
 Jian Chang <aa65535@live.com>
+@@
+
+Package: simple-obfs-server
+Version: 0.0.5-0
+Depends: +libc +USE_GLIBC:librt +USE_GLIBC:libpthread +libpthread +!SIMPLE_OBFS_STATIC_LINK:libev
+Conflicts: 
+Menu-Depends: 
+Provides: 
+Section: net
+Category: Network
+Repository: base
+Title: Simple-obfs
+Maintainer: Jian Chang <aa65535@live.com>
+Source: simple-obfs-0.0.5-486bebd9208539058e57e23a12f23103016e09b4.tar.gz
+License: GPL-3.0-or-later
+LicenseFiles: COPYING LICENSE
+Type: ipkg
+Description: Simple-obfs is a simple obfusacting tool, designed as plugin server of shadowsocks.
+https://github.com/shadowsocks/simple-obfs
+Jian Chang <aa65535@live.com>
+@@
+Config:
+menu "Simple-obfs Compile Configuration"
+	depends on PACKAGE_simple-obfs || PACKAGE_simple-obfs-server
+	config SIMPLE_OBFS_STATIC_LINK
+		bool "enable static link libraries."
+		default n
+endmenu
 @@
 
 
@@ -612,7 +490,6 @@ Source-Makefile: feeds/small/trojan/Makefile
 Build-Depends: openssl
 
 Package: trojan
-Submenu: Web Servers/Proxies
 Version: 1.16.0-2
 Depends: +libc +USE_GLIBC:librt +USE_GLIBC:libpthread +libpthread +libstdcpp +libopenssl +boost +boost-system +boost-program_options +boost-date_time
 Conflicts: 
@@ -685,7 +562,7 @@ Source-Makefile: feeds/small/v2ray-core/Makefile
 Build-Depends: golang/host
 
 Package: v2ray-core
-Version: 5.0.7-1
+Version: 5.3.0-1
 Depends: +libc +USE_GLIBC:librt +USE_GLIBC:libpthread @(aarch64||arm||i386||i686||mips||mips64||mips64el||mipsel||powerpc64||x86_64) +ca-bundle
 Conflicts: 
 Menu-Depends: 
@@ -695,7 +572,7 @@ Category: Network
 Repository: base
 Title: A platform for building proxies to bypass network restrictions
 Maintainer: Tianling Shen <cnsztl@immortalwrt.org>
-Source: v2ray-core-5.0.7.tar.gz
+Source: v2ray-core-5.3.0.tar.gz
 License: MIT
 LicenseFiles: LICENSE
 Type: ipkg
@@ -705,8 +582,31 @@ https://www.v2fly.org
 Tianling Shen <cnsztl@immortalwrt.org>
 @@
 
+Package: v2ray-example
+Version: 5.3.0-1
+Depends: +libc +USE_GLIBC:librt +USE_GLIBC:libpthread v2ray-core
+Conflicts: 
+Menu-Depends: 
+Provides: 
+Section: net
+Category: Network
+Repository: base
+Title: A platform for building proxies to bypass network restrictions (example configs)
+Maintainer: Tianling Shen <cnsztl@immortalwrt.org>
+Source: v2ray-core-5.3.0.tar.gz
+License: MIT
+LicenseFiles: LICENSE
+Type: ipkg
+Description:     Project V is a set of network tools that help you to build your own computer network.
+  It secures your network connections and thus protects your privacy.
+
+  This includes example configuration files for v2ray-core.
+https://www.v2fly.org
+Tianling Shen <cnsztl@immortalwrt.org>
+@@
+
 Package: v2ray-extra
-Version: 5.0.7-1
+Version: 5.3.0-1
 Depends: +libc +USE_GLIBC:librt +USE_GLIBC:libpthread v2ray-core
 Conflicts: 
 Menu-Depends: 
@@ -716,7 +616,7 @@ Category: Network
 Repository: base
 Title: A platform for building proxies to bypass network restrictions (extra resources)
 Maintainer: Tianling Shen <cnsztl@immortalwrt.org>
-Source: v2ray-core-5.0.7.tar.gz
+Source: v2ray-core-5.3.0.tar.gz
 License: MIT
 LicenseFiles: LICENSE
 Type: ipkg
@@ -733,7 +633,7 @@ Source-Makefile: feeds/small/v2ray-geodata/Makefile
 
 Package: v2ray-geoip
 Submenu: IP Addresses and Names
-Version: 202206160052-1
+Version: 202302090046-0
 Depends: +libc +USE_GLIBC:librt +USE_GLIBC:libpthread 
 Conflicts: 
 Menu-Depends: 
@@ -754,7 +654,7 @@ Tianling Shen <cnsztl@immortalwrt.org>
 
 Package: v2ray-geosite
 Submenu: IP Addresses and Names
-Version: 20220620091914-1
+Version: 20230212092031-0
 Depends: +libc +USE_GLIBC:librt +USE_GLIBC:libpthread 
 Conflicts: 
 Menu-Depends: 
@@ -779,7 +679,7 @@ Build-Depends: golang/host
 
 Package: v2ray-plugin
 Submenu: Web Servers/Proxies
-Version: 5.0.7-1
+Version: 5.3.0-1
 Depends: +libc +USE_GLIBC:librt +USE_GLIBC:libpthread @(aarch64||arm||i386||i686||mips||mips64||mips64el||mipsel||powerpc64||x86_64) +ca-bundle
 Conflicts: 
 Menu-Depends: 
@@ -789,7 +689,7 @@ Category: Network
 Repository: base
 Title: SIP003 plugin for shadowsocks, based on v2ray
 Maintainer: madeye <max.c.lv@gmail.com>
-Source: v2ray-plugin-5.0.7.tar.gz
+Source: v2ray-plugin-5.3.0.tar.gz
 License: MIT
 LicenseFiles: LICENSE
 Type: ipkg
@@ -804,7 +704,7 @@ Build-Depends: golang/host
 
 Package: v2raya
 Submenu: Web Servers/Proxies
-Version: 1.5.8.1-1
+Version: 2.0.1-1
 Depends: +libc +USE_GLIBC:librt +USE_GLIBC:libpthread @(aarch64||arm||i386||i686||mips||mips64||mips64el||mipsel||powerpc64||x86_64) +ca-bundle +iptables-mod-conntrack-extra +iptables-mod-extra +iptables-mod-filter +iptables-mod-tproxy +kmod-ipt-nat6 +xray-core
 Conflicts: 
 Menu-Depends: 
@@ -814,7 +714,7 @@ Category: Network
 Repository: base
 Title: A Linux web GUI client of Project V
 Maintainer: Tianling Shen <cnsztl@immortalwrt.org>
-Source: v2rayA-1.5.8.1.tar.gz
+Source: v2rayA-2.0.1.tar.gz
 License: AGPL-3.0-only
 LicenseFiles: LICENSE
 Type: ipkg
@@ -829,7 +729,7 @@ Source-Makefile: feeds/small/xray-core/Makefile
 Build-Depends: golang/host
 
 Package: xray-core
-Version: 1.5.8-1
+Version: 1.7.5-1
 Depends: +libc +USE_GLIBC:librt +USE_GLIBC:libpthread @(aarch64||arm||i386||i686||mips||mips64||mips64el||mipsel||powerpc64||x86_64) +ca-bundle
 Conflicts: 
 Menu-Depends: 
@@ -839,7 +739,7 @@ Category: Network
 Repository: base
 Title: A platform for building proxies to bypass network restrictions
 Maintainer: Tianling Shen <cnsztl@immortalwrt.org>
-Source: Xray-core-1.5.8.tar.gz
+Source: xray-core-1.7.5.tar.gz
 License: MPL-2.0
 LicenseFiles: LICENSE
 Type: ipkg
@@ -855,7 +755,7 @@ Build-Depends: golang/host
 
 Package: xray-plugin
 Submenu: Web Servers/Proxies
-Version: 1.5.8-1
+Version: 1.7.5-1
 Depends: +libc +USE_GLIBC:librt +USE_GLIBC:libpthread @(aarch64||arm||i386||i686||mips||mips64||mips64el||mipsel||powerpc64||x86_64) +ca-bundle
 Conflicts: 
 Menu-Depends: 
@@ -865,7 +765,7 @@ Category: Network
 Repository: base
 Title: SIP003 plugin for Shadowsocks, based on Xray
 Maintainer: Tianling Shen <cnsztl@immortalwrt.org>
-Source: xray-plugin-1.5.8.tar.gz
+Source: xray-plugin-1.7.5.tar.gz
 License: MIT
 LicenseFiles: LICENSE
 Type: ipkg

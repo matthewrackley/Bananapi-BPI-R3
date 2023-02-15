@@ -71,9 +71,11 @@ end
 function gen_outbound(node, tag, proxy_table)
     local proxy = 0
     local proxy_tag = "nil"
+    local dialerProxy = nil
     if proxy_table ~= nil and type(proxy_table) == "table" then
         proxy = proxy_table.proxy or 0
         proxy_tag = proxy_table.tag or "nil"
+        dialerProxy = proxy_table.dialerProxy
     end
     local result = nil
     if node and node ~= "nil" then
@@ -85,10 +87,18 @@ function gen_outbound(node, tag, proxy_table)
         if node.type == "V2ray" or node.type == "Xray" then
             proxy = 0
             if proxy_tag ~= "nil" then
-                node.proxySettings = {
-                    tag = proxy_tag,
-                    transportLayer = true
-                }
+                if dialerProxy and dialerProxy == "1" then
+                    node.streamSettings = {
+                        sockopt = {
+                            dialerProxy = proxy_tag
+                        }
+                    }
+                else
+                    node.proxySettings = {
+                        tag = proxy_tag,
+                        transportLayer = true
+                    }
+                end
             end
         end
 
@@ -107,7 +117,7 @@ function gen_outbound(node, tag, proxy_table)
                         "127.0.0.1", --bind
                         new_port, --socks port
                         string.format("%s_%s_%s_%s.json", flag, tag, node_id, new_port), --config file
-                        (proxy == 1 and proxy_tag ~= "nil" and relay_port) and tostring(relay_port) or "" --relay port
+                        (proxy == 1 and relay_port) and tostring(relay_port) or "" --relay port
                         )
                     )
                 )
@@ -121,9 +131,6 @@ function gen_outbound(node, tag, proxy_table)
         else
             if node.tls and node.tls == "1" then
                 node.stream_security = "tls"
-                if node.type == "Xray" and node.xtls and node.xtls == "1" then
-                    node.stream_security = "xtls"
-                end
             end
         end
 
@@ -134,22 +141,22 @@ function gen_outbound(node, tag, proxy_table)
             tag = tag,
             proxySettings = node.proxySettings or nil,
             protocol = node.protocol,
-            mux = (node.stream_security ~= "xtls") and {
+            mux = {
                 enabled = (node.mux == "1") and true or false,
                 concurrency = (node.mux_concurrency) and tonumber(node.mux_concurrency) or 8
             } or nil,
             -- 底层传输配置
-            streamSettings = (node.protocol == "vmess" or node.protocol == "vless" or node.protocol == "socks" or node.protocol == "shadowsocks" or node.protocol == "trojan") and {
+            streamSettings = (node.streamSettings or node.protocol == "vmess" or node.protocol == "vless" or node.protocol == "socks" or node.protocol == "shadowsocks" or node.protocol == "trojan") and {
+                sockopt = {
+                    mark = 255,
+                    dialerProxy = (node.streamSettings and dialerProxy and dialerProxy == "1") and node.streamSettings.sockopt.dialerProxy or nil
+                },
                 network = node.transport,
                 security = node.stream_security,
-                xtlsSettings = (node.stream_security == "xtls") and {
-                    serverName = node.tls_serverName,
-                    allowInsecure = (node.tls_allowInsecure == "1") and true or false
-                } or nil,
                 tlsSettings = (node.stream_security == "tls") and {
                     serverName = node.tls_serverName,
                     allowInsecure = (node.tls_allowInsecure == "1") and true or false,
-                    fingerprint = (node.type == "Xray" and node.fingerprint and node.fingerprint ~= "disable") and node.fingerprint or nil
+                    fingerprint = (node.type == "Xray" and node.fingerprint and node.fingerprint ~= "") and node.fingerprint or nil
                 } or nil,
                 tcpSettings = (node.transport == "tcp" and node.protocol ~= "socks") and {
                     header = {
@@ -213,7 +220,7 @@ function gen_outbound(node, tag, proxy_table)
                                 level = 0,
                                 security = (node.protocol == "vmess") and node.security or nil,
                                 encryption = node.encryption or "none",
-                                flow = node.flow or nil
+                                flow = (node.protocol == "vless" and node.tls == '1' and node.tlsflow) and node.tlsflow or nil
                             }
                         }
                     }
@@ -223,7 +230,6 @@ function gen_outbound(node, tag, proxy_table)
                         address = node.address,
                         port = tonumber(node.port),
                         method = node.method or nil,
-                        flow = node.flow or nil,
                         ivCheck = (node.protocol == "shadowsocks") and node.iv_check == "1" or nil,
                         uot = (node.protocol == "shadowsocks") and node.uot == "1" or nil,
                         password = node.password or "",
@@ -234,7 +240,18 @@ function gen_outbound(node, tag, proxy_table)
                             }
                         } or nil
                     }
-                } or nil
+                } or nil,
+                address = (node.protocol == "wireguard" and node.wireguard_local_address) and node.wireguard_local_address or nil,
+                secretKey = (node.protocol == "wireguard") and node.wireguard_secret_key or nil,
+                peers = (node.protocol == "wireguard") and {
+                    {
+                        publicKey = node.wireguard_public_key,
+                        endpoint = node.address .. ":" .. node.port,
+                        preSharedKey = node.wireguard_preSharedKey,
+                        keepAlive = node.wireguard_keepAlive and tonumber(node.wireguard_keepAlive) or nil
+                    }
+                } or nil,
+                mtu = (node.protocol == "wireguard" and node.wireguard_mtu) and tonumber(node.wireguard_mtu) or nil
             }
         }
         local alpn = {}
@@ -246,9 +263,6 @@ function gen_outbound(node, tag, proxy_table)
         if alpn and #alpn > 0 then
             if result.streamSettings.tlsSettings then
                 result.streamSettings.tlsSettings.alpn = alpn
-            end
-            if result.streamSettings.xtlsSettings then
-                result.streamSettings.xtlsSettings.alpn = alpn
             end
         end
     end
@@ -367,7 +381,7 @@ if node_id then
                 end
             end
             if default_node and api.is_normal_node(default_node) then
-                local default_outbound = gen_outbound(default_node, "default", { proxy = proxy, tag = proxy_tag })
+                local default_outbound = gen_outbound(default_node, "default", { proxy = proxy, tag = proxy_tag, dialerProxy = node.dialerProxy })
                 if default_outbound then
                     table.insert(outbounds, default_outbound)
                     default_outboundTag = "default"
@@ -425,7 +439,7 @@ if node_id then
                                         })
                                     end
                                 end
-                                local _outbound = gen_outbound(_node, name, { proxy = (proxy_tag ~= "nil") and 1 or 0, tag = (proxy_tag ~= "nil") and proxy_tag or nil })
+                                local _outbound = gen_outbound(_node, name, { proxy = (proxy_tag ~= "nil") and 1 or 0, tag = (proxy_tag ~= "nil") and proxy_tag or nil, dialerProxy = node.dialerProxy })
                                 if _outbound then
                                     table.insert(outbounds, _outbound)
                                     outboundTag = name
@@ -512,7 +526,22 @@ if node_id then
             }
         end
     else
-        local outbound = gen_outbound(node)
+        local outbound = nil
+        if node.protocol == "_iface" then
+            if node.iface then
+                outbound = {
+                    protocol = "freedom",
+                    tag = "outbound",
+                    streamSettings = {
+                        sockopt = {
+                            interface = node.iface
+                        }
+                    }
+                }
+            end
+        else
+            outbound = gen_outbound(node)
+        end
         if outbound then table.insert(outbounds, outbound) end
         routing = {
             domainStrategy = "AsIs",
@@ -651,7 +680,10 @@ if remote_dns_server or remote_dns_doh_url or remote_dns_fake then
                 protocol = "socks",
                 streamSettings = {
                     network = "tcp",
-                    security = "none"
+                    security = "none",
+                    sockopt = {
+                        mark = 255
+                    }
                 },
                 settings = {
                     servers = {

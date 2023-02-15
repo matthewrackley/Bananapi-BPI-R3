@@ -4,7 +4,7 @@ Build-Depends: lua/host luci-base/host LUCI_CSSTIDY:csstidy/host LUCI_SRCDIET:lu
 Package: luci-app-vssr
 Submenu: 3. Applications
 Version: 1.25
-Depends: +libc +USE_GLIBC:librt +USE_GLIBC:libpthread +ipset +ip-full +iptables-mod-tproxy +dnsmasq-full +coreutils +coreutils-base64 +bash +pdnsd-alt +wget-ssl +lua +luasocket +lua-maxminddb +lua-cjson +shadowsocks-libev-ss-local +shadowsocks-libev-ss-redir +shadowsocksr-libev-ssr-local +shadowsocksr-libev-ssr-redir +shadowsocksr-libev-ssr-check +simple-obfs +PACKAGE_luci-app-vssr_INCLUDE_Xray:xray-core +PACKAGE_luci-app-vssr_INCLUDE_Trojan:trojan +PACKAGE_luci-app-vssr_INCLUDE_Trojan:ipt2socks +PACKAGE_luci-app-vssr_INCLUDE_Kcptun:kcptun-client +PACKAGE_luci-app-vssr_INCLUDE_Xray_plugin:xray-plugin +PACKAGE_luci-app-vssr_INCLUDE_ShadowsocksR_Libev_Server:shadowsocksr-libev-ssr-server
+Depends: +libc +USE_GLIBC:librt +USE_GLIBC:libpthread +ipset +ip-full +iptables-mod-tproxy +dnsmasq-full +coreutils +coreutils-base64 +bash +pdnsd-alt +wget-ssl +lua +luasocket +lua-maxminddb +lua-cjson +shadowsocks-libev-ss-local +shadowsocks-libev-ss-redir +shadowsocksr-libev-ssr-local +shadowsocksr-libev-ssr-redir +shadowsocksr-libev-ssr-check +simple-obfs +PACKAGE_luci-app-vssr_INCLUDE_Xray:xray-core +PACKAGE_luci-app-vssr_INCLUDE_Trojan:trojan +PACKAGE_luci-app-vssr_INCLUDE_Trojan:ipt2socks +PACKAGE_luci-app-vssr_INCLUDE_Kcptun:kcptun-client +PACKAGE_luci-app-vssr_INCLUDE_Xray_plugin:xray-plugin +PACKAGE_luci-app-vssr_INCLUDE_ShadowsocksR_Libev_Server:shadowsocksr-libev-ssr-server +PACKAGE_luci-app-vssr_INCLUDE_Hysteria:hysteria
 Conflicts: 
 Menu-Depends: 
 Provides: 
@@ -38,6 +38,10 @@ config PACKAGE_luci-app-vssr_INCLUDE_Xray_plugin
 	
 config PACKAGE_luci-app-vssr_INCLUDE_ShadowsocksR_Libev_Server
 	bool "Include ShadowsocksR Libev Server"
+	default y if i386||x86_64||arm||aarch64
+
+config PACKAGE_luci-app-vssr_INCLUDE_Hysteria
+	bool "Include Hysteria"
 	default y if i386||x86_64||arm||aarch64
 @@
 

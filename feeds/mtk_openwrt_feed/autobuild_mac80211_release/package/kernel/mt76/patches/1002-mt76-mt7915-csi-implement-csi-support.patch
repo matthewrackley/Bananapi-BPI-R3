@@ -1,7 +1,7 @@
-From c2e0f6df51b9b2e681285523b1c4471c7f613c83 Mon Sep 17 00:00:00 2001
+From f7a36f2ff5ca5cdf4a5fca215b14622da6257016 Mon Sep 17 00:00:00 2001
 From: Bo Jiao <Bo.Jiao@mediatek.com>
 Date: Mon, 6 Jun 2022 20:13:02 +0800
-Subject: [PATCH 1002/1008] mt76: mt7915: csi: implement csi support
+Subject: [PATCH 1002/1009] mt76: mt7915: csi: implement csi support
 
 ---
  mt76_connac_mcu.h |   2 +
@@ -13,23 +13,22 @@ Subject: [PATCH 1002/1008] mt76: mt7915: csi: implement csi support
  mt7915/vendor.c   | 452 ++++++++++++++++++++++++++++++++++++++++++++++
  mt7915/vendor.h   |  60 ++++++
  8 files changed, 762 insertions(+), 2 deletions(-)
- mode change 100755 => 100644 mt7915/mcu.c
  create mode 100644 mt7915/vendor.c
  create mode 100644 mt7915/vendor.h
 
 diff --git a/mt76_connac_mcu.h b/mt76_connac_mcu.h
-index 333d3a0..b25807a 100644
+index cbe0c52a..32156d35 100644
 --- a/mt76_connac_mcu.h
 +++ b/mt76_connac_mcu.h
-@@ -971,6 +971,7 @@ enum {
+@@ -1003,6 +1003,7 @@ enum {
  	MCU_EXT_EVENT_CSA_NOTIFY = 0x4f,
  	MCU_EXT_EVENT_BCC_NOTIFY = 0x75,
  	MCU_EXT_EVENT_MURU_CTRL = 0x9f,
 +	MCU_EXT_EVENT_CSI_REPORT = 0xc2,
  };
  
- enum {
-@@ -1141,6 +1142,7 @@ enum {
+ /* unified event table */
+@@ -1196,6 +1197,7 @@ enum {
  	MCU_EXT_CMD_GROUP_PRE_CAL_INFO = 0xab,
  	MCU_EXT_CMD_DPD_PRE_CAL_INFO = 0xac,
  	MCU_EXT_CMD_PHY_STAT_INFO = 0xad,
@@ -38,13 +37,14 @@ index 333d3a0..b25807a 100644
  
  enum {
 diff --git a/mt7915/Makefile b/mt7915/Makefile
-index a3474e2..e272c82 100644
+index cbcb64be..6a922a9f 100644
 --- a/mt7915/Makefile
 +++ b/mt7915/Makefile
-@@ -1,9 +1,9 @@
+@@ -1,10 +1,10 @@
  # SPDX-License-Identifier: ISC
--
-+EXTRA_CFLAGS += -DCONFIG_MTK_VENDOR
+ 
+-EXTRA_CFLAGS += -DCONFIG_MT76_LEDS
++EXTRA_CFLAGS += -DCONFIG_MT76_LEDS -DCONFIG_MTK_VENDOR
  obj-$(CONFIG_MT7915E) += mt7915e.o
  
  mt7915e-y := pci.o init.o dma.o eeprom.o main.o mcu.o mac.o \
@@ -53,14 +53,13 @@ index a3474e2..e272c82 100644
  
  mt7915e-$(CONFIG_NL80211_TESTMODE) += testmode.o
  mt7915e-$(CONFIG_MT7986_WMAC) += soc.o
-\ No newline at end of file
 diff --git a/mt7915/init.c b/mt7915/init.c
-index 8554c9d..fa9568c 100644
+index 8485a154..06ac261f 100644
 --- a/mt7915/init.c
 +++ b/mt7915/init.c
-@@ -542,6 +542,12 @@ mt7915_register_ext_phy(struct mt7915_dev *dev, struct mt7915_phy *phy)
+@@ -652,6 +652,12 @@ mt7915_register_ext_phy(struct mt7915_dev *dev, struct mt7915_phy *phy)
  	/* init wiphy according to mphy and phy */
- 	mt7915_init_wiphy(mphy->hw);
+ 	mt7915_init_wiphy(phy);
  
 +#ifdef CONFIG_MTK_VENDOR
 +	INIT_LIST_HEAD(&phy->csi.csi_list);
@@ -71,7 +70,7 @@ index 8554c9d..fa9568c 100644
  	ret = mt76_register_phy(mphy, true, mt76_rates,
  				ARRAY_SIZE(mt76_rates));
  	if (ret)
-@@ -1032,6 +1038,25 @@ void mt7915_set_stream_he_caps(struct mt7915_phy *phy)
+@@ -1144,6 +1150,25 @@ void mt7915_set_stream_he_caps(struct mt7915_phy *phy)
  	}
  }
  
@@ -97,7 +96,7 @@ index 8554c9d..fa9568c 100644
  static void mt7915_unregister_ext_phy(struct mt7915_dev *dev)
  {
  	struct mt7915_phy *phy = mt7915_ext_phy(dev);
-@@ -1040,6 +1065,10 @@ static void mt7915_unregister_ext_phy(struct mt7915_dev *dev)
+@@ -1152,6 +1177,10 @@ static void mt7915_unregister_ext_phy(struct mt7915_dev *dev)
  	if (!phy)
  		return;
  
@@ -108,7 +107,7 @@ index 8554c9d..fa9568c 100644
  	mt7915_unregister_thermal(phy);
  	mt76_unregister_phy(mphy);
  	ieee80211_free_hw(mphy->hw);
-@@ -1052,6 +1081,10 @@ static void mt7915_stop_hardware(struct mt7915_dev *dev)
+@@ -1164,6 +1193,10 @@ static void mt7915_stop_hardware(struct mt7915_dev *dev)
  	mt7915_dma_cleanup(dev);
  	tasklet_disable(&dev->irq_tasklet);
  
@@ -119,7 +118,7 @@ index 8554c9d..fa9568c 100644
  	if (is_mt7986(&dev->mt76))
  		mt7986_wmac_disable(dev);
  }
-@@ -1092,6 +1125,12 @@ int mt7915_register_device(struct mt7915_dev *dev)
+@@ -1204,6 +1237,12 @@ int mt7915_register_device(struct mt7915_dev *dev)
  	dev->mt76.test_ops = &mt7915_testmode_ops;
  #endif
  
@@ -129,18 +128,16 @@ index 8554c9d..fa9568c 100644
 +	mt7915_vendor_register(&dev->phy);
 +#endif
 +
- 	/* init led callbacks */
- 	if (IS_ENABLED(CONFIG_MT76_LEDS)) {
- 		dev->mt76.led_cdev.brightness_set = mt7915_led_set_brightness;
+ 	ret = mt76_register_device(&dev->mt76, true, mt76_rates,
+ 				   ARRAY_SIZE(mt76_rates));
+ 	if (ret)
 diff --git a/mt7915/mcu.c b/mt7915/mcu.c
-old mode 100755
-new mode 100644
-index 4ff13c7..0941bf3
+index ff718f78..59cce553 100644
 --- a/mt7915/mcu.c
 +++ b/mt7915/mcu.c
-@@ -32,6 +32,10 @@
- #define HE_PHY(p, c)			u8_get_bits(c, IEEE80211_HE_PHY_##p)
- #define HE_MAC(m, c)			u8_get_bits(c, IEEE80211_HE_MAC_##m)
+@@ -36,6 +36,10 @@ static bool sr_scene_detect = true;
+ module_param(sr_scene_detect, bool, 0644);
+ MODULE_PARM_DESC(sr_scene_detect, "Enable firmware scene detection algorithm");
  
 +#ifdef CONFIG_MTK_VENDOR
 +static int mt7915_mcu_report_csi(struct mt7915_dev *dev, struct sk_buff *skb);
@@ -149,7 +146,7 @@ index 4ff13c7..0941bf3
  static u8
  mt7915_mcu_get_sta_nss(u16 mcs_map)
  {
-@@ -351,6 +355,11 @@ mt7915_mcu_rx_ext_event(struct mt7915_dev *dev, struct sk_buff *skb)
+@@ -371,6 +375,11 @@ mt7915_mcu_rx_ext_event(struct mt7915_dev *dev, struct sk_buff *skb)
  	case MCU_EXT_EVENT_FW_LOG_2_HOST:
  		mt7915_mcu_rx_log_message(dev, skb);
  		break;
@@ -161,7 +158,7 @@ index 4ff13c7..0941bf3
  	case MCU_EXT_EVENT_BCC_NOTIFY:
  		mt7915_mcu_rx_bcc_notify(dev, skb);
  		break;
-@@ -3446,6 +3455,108 @@ int mt7915_mcu_twt_agrt_update(struct mt7915_dev *dev,
+@@ -3824,6 +3833,108 @@ int mt7915_mcu_twt_agrt_update(struct mt7915_dev *dev,
  				 &req, sizeof(req), true);
  }
  
@@ -223,7 +220,7 @@ index 4ff13c7..0941bf3
 +	SET_CSI_DATA(ts);
 +
 +	SET_CSI_DATA(band);
-+	if (csi->band && !phy->band_idx)
++	if (csi->band && !phy->mt76->band_idx)
 +		phy = mt7915_ext_phy(dev);
 +#undef SET_CSI_DATA
 +
@@ -271,12 +268,12 @@ index 4ff13c7..0941bf3
  int mt7915_dbg_mcu_wa_cmd(struct mt7915_dev *dev, int cmd, u32 a1, u32 a2, u32 a3, bool wait_resp)
  {
 diff --git a/mt7915/mcu.h b/mt7915/mcu.h
-index b2c51bf..ec8887b 100644
+index da863601..c776417b 100644
 --- a/mt7915/mcu.h
 +++ b/mt7915/mcu.h
-@@ -476,4 +476,80 @@ enum {
- 					 sizeof(struct bss_info_bcn_cont) + \
- 					 sizeof(struct bss_info_inband_discovery))
+@@ -533,4 +533,80 @@ mt7915_get_power_bound(struct mt7915_phy *phy, s8 txpower)
+ 	return txpower;
+ }
  
 +#ifdef CONFIG_MTK_VENDOR
 +struct mt7915_mcu_csi {
@@ -356,10 +353,10 @@ index b2c51bf..ec8887b 100644
 +
  #endif
 diff --git a/mt7915/mt7915.h b/mt7915/mt7915.h
-index 594f2fb..5a6224b 100644
+index 19880099..bd2ca6cc 100644
 --- a/mt7915/mt7915.h
 +++ b/mt7915/mt7915.h
-@@ -276,6 +276,20 @@ struct mt7915_phy {
+@@ -294,6 +294,20 @@ struct mt7915_phy {
  		u8 spe_idx;
  	} test;
  #endif
@@ -380,9 +377,9 @@ index 594f2fb..5a6224b 100644
  };
  
  struct mt7915_dev {
-@@ -616,6 +630,12 @@ void mt7915_sta_add_debugfs(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
- 			    struct ieee80211_sta *sta, struct dentry *dir);
- #endif
+@@ -675,6 +689,12 @@ void mt7915_sta_add_debugfs(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
+ int mt7915_mmio_wed_init(struct mt7915_dev *dev, void *pdev_ptr,
+ 			 bool pci, int *irq);
  
 +#ifdef CONFIG_MTK_VENDOR
 +void mt7915_vendor_register(struct mt7915_phy *phy);
@@ -395,7 +392,7 @@ index 594f2fb..5a6224b 100644
  int mt7915_dbg_mcu_wa_cmd(struct mt7915_dev *dev, int cmd, u32 a1, u32 a2, u32 a3, bool wait_resp);
 diff --git a/mt7915/vendor.c b/mt7915/vendor.c
 new file mode 100644
-index 0000000..98fd9c2
+index 00000000..98fd9c2d
 --- /dev/null
 +++ b/mt7915/vendor.c
 @@ -0,0 +1,452 @@
@@ -853,7 +850,7 @@ index 0000000..98fd9c2
 +}
 diff --git a/mt7915/vendor.h b/mt7915/vendor.h
 new file mode 100644
-index 0000000..9d3db2a
+index 00000000..9d3db2a7
 --- /dev/null
 +++ b/mt7915/vendor.h
 @@ -0,0 +1,60 @@

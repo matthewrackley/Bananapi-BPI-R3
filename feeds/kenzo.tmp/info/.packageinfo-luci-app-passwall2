@@ -3,7 +3,7 @@ Build-Depends: lua/host luci-base/host LUCI_CSSTIDY:csstidy/host LUCI_SRCDIET:lu
 
 Package: luci-app-passwall2
 Submenu: 3. Applications
-Version: 1.3
+Version: 1.8
 Depends: +libc +USE_GLIBC:librt +USE_GLIBC:libpthread +coreutils +coreutils-base64 +coreutils-nohup +curl +ip-full +libuci-lua +lua +luci-compat +luci-lib-jsonc +resolveip +tcping +xray-core +v2ray-geoip +v2ray-geosite +unzip +PACKAGE_luci-app-passwall2_INCLUDE_Brook:brook +PACKAGE_luci-app-passwall2_INCLUDE_Hysteria:hysteria +PACKAGE_luci-app-passwall2_INCLUDE_IPv6_Nat:ip6tables-mod-nat +PACKAGE_luci-app-passwall2_INCLUDE_NaiveProxy:naiveproxy +PACKAGE_luci-app-passwall2_INCLUDE_Shadowsocks_Libev_Client:shadowsocks-libev-ss-local +PACKAGE_luci-app-passwall2_INCLUDE_Shadowsocks_Libev_Client:shadowsocks-libev-ss-redir +PACKAGE_luci-app-passwall2_INCLUDE_Shadowsocks_Libev_Server:shadowsocks-libev-ss-server +PACKAGE_luci-app-passwall2_INCLUDE_Shadowsocks_Rust_Client:shadowsocks-rust-sslocal +PACKAGE_luci-app-passwall2_INCLUDE_Shadowsocks_Rust_Server:shadowsocks-rust-ssserver +PACKAGE_luci-app-passwall2_INCLUDE_ShadowsocksR_Libev_Client:shadowsocksr-libev-ssr-local +PACKAGE_luci-app-passwall2_INCLUDE_ShadowsocksR_Libev_Client:shadowsocksr-libev-ssr-redir +PACKAGE_luci-app-passwall2_INCLUDE_ShadowsocksR_Libev_Server:shadowsocksr-libev-ssr-server +PACKAGE_luci-app-passwall2_INCLUDE_Simple_Obfs:simple-obfs +PACKAGE_luci-app-passwall2_INCLUDE_V2ray:v2ray-core +PACKAGE_luci-app-passwall2_INCLUDE_V2ray_Plugin:v2ray-plugin
 Conflicts: 
 Menu-Depends: 
@@ -27,12 +27,13 @@ config PACKAGE_luci-app-passwall2_Transparent_Proxy
 	select PACKAGE_dnsmasq-full
 	select PACKAGE_ipset
 	select PACKAGE_iptables
-	select PACKAGE_iptables-legacy
+	select PACKAGE_iptables-zz-legacy
 	select PACKAGE_iptables-mod-iprange
 	select PACKAGE_iptables-mod-socket
 	select PACKAGE_iptables-mod-tproxy
 	select PACKAGE_iptables-mod-conntrack-extra
 	select PACKAGE_kmod-ipt-nat
+	depends on PACKAGE_luci-app-passwall2
 	default y
 
 config PACKAGE_luci-app-passwall2_INCLUDE_Brook

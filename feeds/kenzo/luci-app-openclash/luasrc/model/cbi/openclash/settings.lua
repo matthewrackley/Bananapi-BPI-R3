@@ -16,7 +16,7 @@ bold_off = [[</strong>]]
 
 local op_mode = string.sub(luci.sys.exec('uci get openclash.config.operation_mode 2>/dev/null'),0,-2)
 if not op_mode then op_mode = "redir-host" end
-local lan_ip = SYS.exec("uci -q get network.lan.ipaddr |awk -F '/' '{print $1}' 2>/dev/null |tr -d '\n' || ip address show $(uci -q -p /tmp/state get network.lan.ifname) | grep -w 'inet'  2>/dev/null |grep -Eo 'inet [0-9\.]+' | awk '{print $2}' | tr -d '\n' || ip addr show 2>/dev/null | grep -w 'inet' | grep 'global' | grep 'brd' | grep -Eo 'inet [0-9\.]+' | awk '{print $2}' | head -n 1 | tr -d '\n'")
+local lan_ip = SYS.exec("uci -q get network.lan.ipaddr |awk -F '/' '{print $1}' 2>/dev/null |tr -d '\n' || ip address show $(uci -q -p /tmp/state get network.lan.ifname || uci -q -p /tmp/state get network.lan.device) | grep -w 'inet'  2>/dev/null |grep -Eo 'inet [0-9\.]+' | awk '{print $2}' | tr -d '\n' || ip addr show 2>/dev/null | grep -w 'inet' | grep 'global' | grep 'brd' | grep -Eo 'inet [0-9\.]+' | awk '{print $2}' | head -n 1 | tr -d '\n'")
 
 m = Map("openclash", translate("Global Settings(Will Modify The Config File Or Subscribe According To The Settings On This Page)"))
 m.pageaction = false
@@ -43,11 +43,13 @@ else
 s:tab("rules", translate("Rules Setting"))
 end
 s:tab("dashboard", translate("Dashboard Settings"))
+s:tab("ipv6", translate("IPv6 Settings"))
 s:tab("rules_update", translate("Rules Update"))
 s:tab("geo_update", translate("GEO Update"))
 s:tab("chnr_update", translate("Chnroute Update"))
 s:tab("auto_restart", translate("Auto Restart"))
 s:tab("version_update", translate("Version Update"))
+s:tab("developer", translate("Developer Settings"))
 s:tab("debug", translate("Debug Logs"))
 s:tab("dlercloud", translate("Dler Cloud"))
 
@@ -66,7 +68,7 @@ o.default = "fake-ip"
 end
 
 o = s:taboption("op_mode", Flag, "enable_udp_proxy", font_red..bold_on..translate("Proxy UDP Traffics")..bold_off..font_off)
-o.description = translate("The Servers Must Support UDP forwarding")..", "..font_red..bold_on..translate("If Docker is Installed, UDP May Not Forward Normally")..bold_off..font_off
+o.description = translate("The Servers Must Support UDP forwarding").."<br>"..font_red..bold_on.."1."..translate("If Docker is Installed, UDP May Not Forward Normally").."<br>2."..translate("In Fake-ip Mode, Even If This Option is Turned Off, Domain Type Connections Still Pass Through The Core For The Availability")..bold_off..font_off
 o:depends("en_mode", "redir-host")
 o:depends("en_mode", "fake-ip")
 o.default = 1
@@ -94,15 +96,6 @@ o.description = translate("Only Supported for Rule Mode")..", "..font_red..bold_
 o.default = 1
 o:depends("proxy_mode", "rule")
 
-o = s:taboption("op_mode", Flag, "ipv6_enable", font_red..bold_on..translate("Proxy IPv6 Traffic")..bold_off..font_off)
-o.description = font_red..bold_on..translate("The Gateway and DNS of The Connected Device Must be The Router IP, Disable IPv6 DHCP To Avoid Abnormal Connection If You Do Not Use")..bold_off..font_off
-o.default = 0
-
-o = s:taboption("op_mode", Flag, "china_ip6_route", translate("China IPv6 Route"))
-o.description = translate("Bypass The China Network Flows, Improve Performance")
-o.default = 0
-o:depends("ipv6_enable", "1")
-
 o = s:taboption("op_mode", Flag, "disable_udp_quic", font_red..bold_on..translate("Disable QUIC")..bold_off..font_off)
 o.description = translate("Prevent YouTube and Others To Use QUIC Transmission")..", "..font_red..bold_on..translate("REJECT UDP Traffic(Not Include CN) On Port 443")..bold_off..font_off
 o.default = 1
@@ -118,19 +111,29 @@ o:depends("en_mode", "redir-host")
 o:depends("en_mode", "redir-host-tun")
 o:depends("en_mode", "redir-host-mix")
 
-o = s:taboption("op_mode", Flag, "china_ip_route", translate("China IP Route"))
-o.description = translate("Bypass The China Network Flows, Improve Performance")
-o.default = 0
-o:depends("en_mode", "redir-host")
-o:depends("en_mode", "redir-host-tun")
-o:depends("en_mode", "redir-host-mix")
+if op_mode == "redir-host" then
+	o = s:taboption("op_mode", Flag, "china_ip_route", translate("China IP Route"))
+	o.description = translate("Bypass The China Network Flows, Improve Performance")
+	o.default = 0
+else
+	o = s:taboption("op_mode", Flag, "china_ip_route", translate("China IP Route"))
+	o.description = translate("Bypass The China Network Flows, Improve Performance, Depend on Dnsmasq")
+	o.default = 0
+	o:depends("enable_redirect_dns", "1")
+
+	o = s:taboption("op_mode", Value, "custom_china_domain_dns_server", translate("Specify CN DNS Server"))
+	o.description = translate("Specify DNS Server For CN Domain Lists, Only One IP Server Address Support")
+	o.default = "114.114.114.114"
+	o.placeholder = translate("114.114.114.114 or 127.0.0.1#5300")
+	o:depends("china_ip_route", "1")
+end
 
 o = s:taboption("op_mode", Flag, "intranet_allowed", translate("Only intranet allowed"))
 o.description = translate("When Enabled, The Control Panel And The Connection Broker Port Will Not Be Accessible From The Public Network")
 o.default = 1
 
 o = s:taboption("op_mode", Flag, "bypass_gateway_compatible", translate("Bypass Gateway Compatible"))
-o.description = translate("If The Ntwork Cannot be Connected in Bypass Gateway Mode, Please Try to Enable.")..font_red..bold_on..translate("Suggestion: If The Device Does Not Have WLAN, Please Disable The Lan Interface's Bridge Option")..bold_off..font_off
+o.description = translate("If The Network Cannot be Connected in Bypass Gateway Mode, Please Try to Enable.")..font_red..bold_on..translate("Suggestion: If The Device Does Not Have WLAN, Please Disable The Lan Interface's Bridge Option")..bold_off..font_off
 o.default = 0
 
 o = s:taboption("op_mode", Flag, "small_flash_memory", translate("Small Flash Memory"))
@@ -164,8 +167,18 @@ o = s:taboption("settings", Value, "github_address_mod", font_red..bold_on..tran
 o.description = translate("Modify The Github Address In The Config And OpenClash With Proxy(CDN) To Prevent File Download Faild. Format Reference:").." ".."<a href='javascript:void(0)' onclick='javascript:return winOpen(\"https://ghproxy.com/\")'>https://ghproxy.com/</a>"
 o:value("0", translate("Disable"))
 o:value("https://fastly.jsdelivr.net/")
+o:value("https://testingcf.jsdelivr.net/")
 o:value("https://raw.fastgit.org/")
 o:value("https://cdn.jsdelivr.net/")
+o.default = "0"
+
+o = s:taboption("settings", Value, "urltest_address_mod", translate("Url-Test Address Modify"))
+o.description = translate("Modify The Url-Test Address In The Config")
+o:value("0", translate("Disable"))
+o:value("http://www.gstatic.com/generate_204")
+o:value("http://cp.cloudflare.com/generate_204")
+o:value("https://cp.cloudflare.com/generate_204")
+o:value("http://captive.apple.com/generate_204")
 o.default = "0"
 
 o = s:taboption("settings", Value, "delay_start", translate("Delay Start (s)"))
@@ -229,26 +242,32 @@ o.rmempty = false
 o.description = translate("Please Make Sure Ports Available")
 
 ---- DNS Settings
-o = s:taboption("dns", Flag, "enable_redirect_dns", font_red..bold_on..translate("Redirect Local DNS Setting")..bold_off..font_off)
+o = s:taboption("dns", ListValue, "enable_redirect_dns", font_red..bold_on..translate("Redirect Local DNS Setting")..bold_off..font_off)
 o.description = translate("Set Local DNS Redirect")
 o.default = 1
+o:value("0", translate("Disable"))
+o:value("1", translate("Dnsmasq Redirect"))
+o:value("2", translate("Firewall Redirect"))
 
 o = s:taboption("dns", Flag, "enable_custom_dns", font_red..bold_on..translate("Custom DNS Setting")..bold_off..font_off)
 o.description = font_red..bold_on..translate("Set OpenClash Upstream DNS Resolve Server")..bold_off..font_off
 o.default = 0
 
-if op_mode == "redir-host" then
-o = s:taboption("dns", Flag, "dns_remote", font_red..bold_on..translate("DNS Remote")..bold_off..font_off)
-o.description = font_red..bold_on..translate("Add DNS Remote Support For Redir-Host")..bold_off..font_off
+o = s:taboption("dns", Flag, "append_wan_dns", translate("Append Upstream DNS"))
+o.description = translate("Append The Upstream Assigned DNS And Gateway IP To The Nameserver")
 o.default = 1
-o:depends("enable_meta_core", 0)
-end
 
-o = s:taboption("dns", Flag, "append_wan_dns", font_red..bold_on..translate("Append Upstream DNS")..bold_off..font_off)
-o.description = font_red..bold_on..translate("Append The Upstream Assigned DNS And Gateway IP To The Nameserver")..bold_off..font_off
+o = s:taboption("dns", Flag, "append_default_dns", translate("Append Default DNS"))
+o.description = translate("Automatically Append Compliant DNS to default-nameserver")
 o.default = 1
 
 if op_mode == "fake-ip" then
+o = s:taboption("dns", Value, "fakeip_range", translate("Fake-ip Range (IPv4 Cidr)"))
+o.description = translate("Set Fake-ip Range (IPv4 Cidr)")
+o.datatype = "cidr4"
+o.default = "198.18.0.1/16"
+o.placeholder = "198.18.0.1/16"
+
 o = s:taboption("dns", Flag, "store_fakeip", font_red..bold_on..translate("Persistence Fake-IP")..bold_off..font_off)
 o.description = font_red..bold_on..translate("Cache Fake-IP DNS Resolution Records To File, Improve The Response Speed After Startup")..bold_off..font_off
 o.default = 1
@@ -257,13 +276,10 @@ o = s:taboption("dns", DummyValue, "flush_fakeip_cache", translate("Flush Fake-I
 o.template = "openclash/flush_fakeip_cache"
 end
 
-o = s:taboption("dns", Flag, "ipv6_dns", translate("IPv6 DNS Resolve"))
-o.description = font_red..bold_on..translate("Enable Clash to Resolve IPv6 DNS Requests")..bold_off..font_off
-o.default = 0
-
 o = s:taboption("dns", Flag, "disable_masq_cache", translate("Disable Dnsmasq's DNS Cache"))
 o.description = translate("Recommended Enabled For Avoiding Some Connection Errors")..font_red..bold_on..translate("(Maybe Incompatible For Your Firmware)")..bold_off..font_off
 o.default = 0
+o:depends("enable_redirect_dns", "1")
 
 o = s:taboption("dns", Flag, "custom_fallback_filter", translate("Custom Fallback-Filter"))
 o.description = translate("Take Effect If Fallback DNS Setted, Prevent DNS Pollution")
@@ -319,14 +335,14 @@ o = s:taboption("dns", Value, "custom_domain_dns_server", translate("Specify DNS
 o.description = translate("Specify DNS Server For List and Server Nodes With Fake-IP Mode, Only One IP Server Address Support")
 o.default = "114.114.114.114"
 o.placeholder = translate("114.114.114.114 or 127.0.0.1#5300")
-o:depends("dns_advanced_setting", "1")
+o:depends({dns_advanced_setting = "1", enable_redirect_dns = "1"})
 
 custom_domain_dns = s:taboption("dns", Value, "custom_domain_dns")
 custom_domain_dns.template = "cbi/tvalue"
-custom_domain_dns.description = translate("Domain Names In The List Use The Custom DNS Server, One rule per line")
+custom_domain_dns.description = translate("Domain Names In The List Use The Custom DNS Server, One rule per line, Depend on Dnsmasq")
 custom_domain_dns.rows = 20
 custom_domain_dns.wrap = "off"
-custom_domain_dns:depends("dns_advanced_setting", "1")
+custom_domain_dns:depends({dns_advanced_setting = "1", enable_redirect_dns = "1"})
 
 function custom_domain_dns.cfgvalue(self, section)
 	return NXFS.readfile("/etc/openclash/custom/openclash_custom_domain_dns.list") or ""
@@ -371,10 +387,34 @@ o.description = font_red..bold_on..translate("TCP Concurrent Request IPs, Choose
 o.default = 1
 o:depends("enable_meta_core", "1")
 
+o = s:taboption("meta", ListValue, "find_process_mode", translate("Enable Process Rule"))
+o.description = translate("Whether to Enable Process Rules, If You Are Not Sure, Please Choose off Which Useful in Router Environment")
+o:value("always")
+o:value("strict")
+o:value("off", translate("off　"))
+o.default = "off"
+o:depends("enable_meta_core", "1")
+
+o = s:taboption("meta", ListValue, "client_fingerprint", translate("Client Fingerprint"))
+o.description = translate("Change The Client Fingerprint, Only Support TLS Transport in TCP/GRPC/WS/HTTP For Vless/Vmess and Trojan")
+o:value("0", translate("Disable"))
+o:value("random", translate("Random"))
+o:value("chrome", translate("Chrome"))
+o:value("firefox", translate("Firefox"))
+o:value("safari", translate("Safari"))
+o:value("ios", translate("IOS"))
+o.default = "0"
+o:depends("enable_meta_core", "1")
+
 o = s:taboption("meta", Flag, "enable_meta_sniffer", font_red..bold_on..translate("Enable Sniffer")..bold_off..font_off)
 o.description = font_red..bold_on..translate("Sniffer Will Prevent Domain Name Proxy and DNS Hijack Failure")..bold_off..font_off
 o.default = 1
 o:depends("enable_meta_core", "1")
+
+o = s:taboption("meta", Flag, "enable_meta_sniffer_pure_ip", translate("Forced Sniff Pure IP"))
+o.description = translate("Forced Sniff Pure IP Connections")
+o.default = 1
+o:depends("enable_meta_sniffer", "1")
 
 o = s:taboption("meta", Flag, "enable_meta_sniffer_custom", translate("Custom Sniffer Settings"))
 o.description = translate("Custom The Force and Skip Sniffing Doamin Lists")
@@ -409,14 +449,14 @@ sniffing_port_filter.rows = 20
 sniffing_port_filter.wrap = "off"
 
 function sniffing_port_filter.cfgvalue(self, section)
-	return NXFS.readfile("/etc/openclash/custom/openclash_sniffing_port_filter.yaml") or ""
+	return NXFS.readfile("/etc/openclash/custom/openclash_sniffing_ports_filter.yaml") or ""
 end
 function sniffing_port_filter.write(self, section, value)
 	if value then
 		value = value:gsub("\r\n?", "\n")
-		local old_value = NXFS.readfile("/etc/openclash/custom/openclash_sniffing_port_filter.yaml")
+		local old_value = NXFS.readfile("/etc/openclash/custom/openclash_sniffing_ports_filter.yaml")
 	  if value ~= old_value then
-			NXFS.writefile("/etc/openclash/custom/openclash_sniffing_port_filter.yaml", value)
+			NXFS.writefile("/etc/openclash/custom/openclash_sniffing_ports_filter.yaml", value)
 		end
 	end
 end
@@ -479,9 +519,10 @@ o = s:taboption("meta", Value, "geoip_custom_url")
 o.title = translate("Custom GeoIP Dat URL")
 o.rmempty = true
 o.description = translate("Custom GeoIP Dat URL, Click Button Below To Refresh After Edit")
-o:value("https://fastly.jsdelivr.net/gh/Loyalsoldier/v2ray-rules-dat@release/geoip.dat", translate("Loyalsoldier-Version")..translate("(Default)"))
-o:value("https://mirrors.tuna.tsinghua.edu.cn/osdn/storage/g/v/v2/v2raya/dists/v2ray-rules-dat/geoip.dat", translate("Tuna-Version")..translate("(Default)"))
-o.default = "https://fastly.jsdelivr.net/gh/Loyalsoldier/v2ray-rules-dat@release/geoip.dat"
+o:value("https://testingcf.jsdelivr.net/gh/Loyalsoldier/v2ray-rules-dat@release/geoip.dat", translate("Loyalsoldier-testingcf-jsdelivr-Version")..translate("(Default)"))
+o:value("https://fastly.jsdelivr.net/gh/Loyalsoldier/v2ray-rules-dat@release/geoip.dat", translate("Loyalsoldier-fastly-jsdelivr-Version"))
+o:value("https://ftp.jaist.ac.jp/pub/sourceforge.jp/storage/g/v/v2/v2raya/dists/v2ray-rules-dat/geoip.dat", translate("OSDN-Version")..translate("(Default)"))
+o.default = "https://testingcf.jsdelivr.net/gh/Loyalsoldier/v2ray-rules-dat@release/geoip.dat"
 o:depends("geoip_auto_update", "1")
 
 o = s:taboption("meta", Button, translate("GEOIP Dat Update")) 
@@ -523,9 +564,10 @@ o = s:taboption("meta", Value, "geosite_custom_url")
 o.title = translate("Custom GeoSite URL")
 o.rmempty = true
 o.description = translate("Custom GeoSite Data URL, Click Button Below To Refresh After Edit")
-o:value("https://fastly.jsdelivr.net/gh/Loyalsoldier/v2ray-rules-dat@release/geosite.dat", translate("Loyalsoldier-Version")..translate("(Default)"))
-o:value("https://mirrors.tuna.tsinghua.edu.cn/osdn/storage/g/v/v2/v2raya/dists/v2ray-rules-dat/geosite.dat", translate("Tuna-Version")..translate("(Default)"))
-o.default = "https://fastly.jsdelivr.net/gh/Loyalsoldier/v2ray-rules-dat@release/geosite.dat"
+o:value("https://testingcf.jsdelivr.net/gh/Loyalsoldier/v2ray-rules-dat@release/geosite.dat", translate("Loyalsoldier-testingcf-jsdelivr-Version")..translate("(Default)"))
+o:value("https://fastly.jsdelivr.net/gh/Loyalsoldier/v2ray-rules-dat@release/geosite.dat", translate("Loyalsoldier-fastly-jsdelivr-Version"))
+o:value("https://ftp.jaist.ac.jp/pub/sourceforge.jp/storage/g/v/v2/v2raya/dists/v2ray-rules-dat/geosite.dat", translate("OSDN-Version")..translate("(Default)"))
+o.default = "https://testingcf.jsdelivr.net/gh/Loyalsoldier/v2ray-rules-dat@release/geosite.dat"
 o:depends("geosite_auto_update", "1")
 
 o = s:taboption("meta", Button, translate("GEOSITE Update")) 
@@ -541,15 +583,21 @@ end
 o:depends("geosite_auto_update", "1")
 
 ---- Access Control
-if op_mode == "redir-host" then
 o = s:taboption("lan_ac", ListValue, "lan_ac_mode", translate("LAN Access Control Mode"))
 o:value("0", translate("Black List Mode"))
 o:value("1", translate("White List Mode"))
 o.default = "0"
+o:depends("enable_redirect_dns", "2")
+o:depends({en_mode = "redir-host", enable_redirect_dns = "1"})
+o:depends({en_mode = "redir-host-tun", enable_redirect_dns = "1"})
+o:depends({en_mode = "redir-host-mix", enable_redirect_dns = "1"})
 
 ip_b = s:taboption("lan_ac", DynamicList, "lan_ac_black_ips", translate("LAN Bypassed Host List"))
-ip_b:depends("lan_ac_mode", "0")
 ip_b.datatype = "ipaddr"
+ip_b:depends({lan_ac_mode = "0", enable_redirect_dns = "2"})
+ip_b:depends({lan_ac_mode = "0", en_mode = "redir-host", enable_redirect_dns = "1"})
+ip_b:depends({lan_ac_mode = "0", en_mode = "redir-host-tun", enable_redirect_dns = "1"})
+ip_b:depends({lan_ac_mode = "0", en_mode = "redir-host-mix", enable_redirect_dns = "1"})
 
 mac_b = s:taboption("lan_ac", DynamicList, "lan_ac_black_macs", translate("LAN Bypassed Mac List"))
 mac_b.datatype = "list(macaddr)"
@@ -557,8 +605,11 @@ mac_b.rmempty  = true
 mac_b:depends("lan_ac_mode", "0")
 
 ip_w = s:taboption("lan_ac", DynamicList, "lan_ac_white_ips", translate("LAN Proxied Host List"))
-ip_w:depends("lan_ac_mode", "1")
 ip_w.datatype = "ipaddr"
+ip_w:depends({lan_ac_mode = "1", enable_redirect_dns = "2"})
+ip_w:depends({lan_ac_mode = "1", en_mode = "redir-host", enable_redirect_dns = "1"})
+ip_w:depends({lan_ac_mode = "1", en_mode = "redir-host-tun", enable_redirect_dns = "1"})
+ip_w:depends({lan_ac_mode = "1", en_mode = "redir-host-mix", enable_redirect_dns = "1"})
 
 mac_w = s:taboption("lan_ac", DynamicList, "lan_ac_white_macs", translate("LAN Proxied Mac List"))
 mac_w.datatype = "list(macaddr)"
@@ -584,7 +635,6 @@ luci.ip.neighbors({ family = 6 }, function(n)
 	end
 end)
 end
-end
 
 o = s:taboption("lan_ac", DynamicList, "wan_ac_black_ips", translate("WAN Bypassed Host List"))
 o.datatype = "ipaddr"
@@ -592,8 +642,9 @@ o.description = translate("In The Fake-IP Mode, Only Pure IP Requests Are Suppor
 
 o = s:taboption("lan_ac", DynamicList, "lan_ac_black_ports", translate("Lan Bypassed Port List"))
 o.datatype = "port"
+o.placeholder = translate("5000 or 1234-2345")
 o:value("5000", translate("5000(NAS)"))
-o.description = translate("The Traffic From The Local Specified Port Will Not Pass The Core, Try To Set When The Bypass Gateway Forwarding Fails")
+o.description = "1."..translate("The Traffic From The Local Specified Port Will Not Pass The Core, Try To Set When The Bypass Gateway Forwarding Fails").."<br>".."2."..translate("In The Fake-IP Mode, Only Pure IP Requests Are Supported")
 
 o = s:taboption("lan_ac", Value, "local_network_pass", translate("Local IPv4 Network Bypassed List"))
 o.template = "cbi/tvalue"
@@ -614,21 +665,22 @@ function o.write(self, section, value)
 	end
 end
 
-o = s:taboption("lan_ac", Value, "local_network6_pass", translate("Local IPv6 Network Bypassed List"))
+o = s:taboption("lan_ac", Value, "chnroute_pass", translate("Chnroute Bypassed List"))
 o.template = "cbi/tvalue"
-o.description = translate("The Traffic of The Destination For The Specified Address Will Not Pass The Core")
+o.description = translate("Domains or IPs in The List Will Not be Affected by The China IP Route Option, Depend on Dnsmasq")
 o.rows = 20
 o.wrap = "off"
+o:depends("enable_redirect_dns", "1")
 
 function o.cfgvalue(self, section)
-	return NXFS.readfile("/etc/openclash/custom/openclash_custom_localnetwork_ipv6.list") or ""
+	return NXFS.readfile("/etc/openclash/custom/openclash_custom_chnroute_pass.list") or ""
 end
 function o.write(self, section, value)
 	if value then
 		value = value:gsub("\r\n?", "\n")
-		local old_value = NXFS.readfile("/etc/openclash/custom/openclash_custom_localnetwork_ipv6.list")
+		local old_value = NXFS.readfile("/etc/openclash/custom/openclash_custom_chnroute_pass.list")
 	  if value ~= old_value then
-			NXFS.writefile("/etc/openclash/custom/openclash_custom_localnetwork_ipv6.list", value)
+			NXFS.writefile("/etc/openclash/custom/openclash_custom_chnroute_pass.list", value)
 		end
 	end
 end
@@ -687,6 +739,38 @@ function custom_rules_2.write(self, section, value)
 end
 
 --Stream Enhance
+se_dns_ip = s:taboption("stream_enhance", DynamicList, "lan_block_google_dns_ips", font_red..bold_on..translate("LAN Block Google DNS IP List")..bold_off..font_off)
+se_dns_ip:depends("proxy_mode", "global")
+se_dns_ip:depends("proxy_mode", "direct")
+se_dns_ip:depends("proxy_mode", "script")
+se_dns_ip:depends({router_self_proxy = "1", proxy_mode = "rule"})
+se_dns_ip.datatype = "ipaddr"
+se_dns_ip.rmempty  = true
+
+se_dns_mac = s:taboption("stream_enhance", DynamicList, "lan_block_google_dns_macs", font_red..bold_on..translate("LAN Block Google DNS Mac List")..bold_off..font_off)
+se_dns_mac.datatype = "list(macaddr)"
+se_dns_mac.rmempty  = true
+se_dns_mac:depends("proxy_mode", "global")
+se_dns_mac:depends("proxy_mode", "direct")
+se_dns_mac:depends("proxy_mode", "script")
+se_dns_mac:depends({router_self_proxy = "1", proxy_mode = "rule"})
+
+luci.ip.neighbors({ family = 4 }, function(n)
+	if n.mac and n.dest then
+		se_dns_ip:value(n.dest:string())
+		se_dns_mac:value(n.mac, "%s (%s)" %{ n.mac, n.dest:string() })
+	end
+end)
+
+if string.len(SYS.exec("/usr/share/openclash/openclash_get_network.lua 'gateway6'")) ~= 0 then
+luci.ip.neighbors({ family = 6 }, function(n)
+	if n.mac and n.dest then
+		se_dns_ip:value(n.dest:string())
+		se_dns_mac:value(n.mac, "%s (%s)" %{ n.mac, n.dest:string() })
+	end
+end)
+end
+
 o = s:taboption("stream_enhance", Flag, "stream_domains_prefetch", font_red..bold_on..translate("Prefetch Netflix, Disney Plus Domains")..bold_off..font_off)
 o.description = translate("Prevent Some Devices From Directly Using IP Access To Cause Unlocking Failure, Recommend Use meta Sniffer Function")
 o.default = 0
@@ -718,9 +802,20 @@ o.default = "30"
 o.datatype = "uinteger"
 o:depends("stream_auto_select", "1")
 
+o = s:taboption("stream_enhance", ListValue, "stream_auto_select_logic", font_red..bold_on..translate("Auto Select Logic")..bold_off..font_off)
+o.default = "urltest"
+o:value("urltest", translate("Urltest"))
+o:value("random", translate("Random"))
+o:depends("stream_auto_select", "1")
+
 o = s:taboption("stream_enhance", Flag, "stream_auto_select_expand_group", font_red..bold_on..translate("Expand Group")..bold_off..font_off)
 o.description = translate("Automatically Expand The Group When Selected")
 o.default = 0
+o:depends("stream_auto_select", "1")
+
+o = s:taboption("stream_enhance", Flag, "stream_auto_select_close_con", translate("Close Old Connections"))
+o.description = translate("Automatically Close Old Connections When New Unlock Node Selected")
+o.default = 1
 o:depends("stream_auto_select", "1")
 
 --Netflix
@@ -739,6 +834,12 @@ o.default = ""
 o.placeholder = "HK|SG|TW"
 o.description = translate("It Will Be Selected Region(Country Shortcode) According To The Regex")
 o:depends("stream_auto_select_netflix", "1")
+function o.validate(self, value)
+	if value ~= m.uci:get("openclash", "config", "stream_auto_select_region_key_netflix") then
+		fs.unlink("/tmp/openclash_Netflix_region")
+	end
+	return value
+end
 
 o = s:taboption("stream_enhance", Value, "stream_auto_select_node_key_netflix", translate("Unlock Nodes Filter"))
 o.default = ""
@@ -767,6 +868,12 @@ o.default = ""
 o.placeholder = "HK|SG|TW"
 o.description = translate("It Will Be Selected Region(Country Shortcode) According To The Regex")
 o:depends("stream_auto_select_disney", "1")
+function o.validate(self, value)
+	if value ~= m.uci:get("openclash", "config", "stream_auto_select_region_key_disney") then
+		fs.unlink("/tmp/openclash_Disney Plus_region")
+	end
+	return value
+end
 
 o = s:taboption("stream_enhance", Value, "stream_auto_select_node_key_disney", translate("Unlock Nodes Filter"))
 o.default = ""
@@ -795,6 +902,12 @@ o.default = ""
 o.placeholder = "HK|US"
 o.description = translate("It Will Be Selected Region(Country Shortcode) According To The Regex")
 o:depends("stream_auto_select_ytb", "1")
+function o.validate(self, value)
+	if value ~= m.uci:get("openclash", "config", "stream_auto_select_region_key_ytb") then
+		fs.unlink("/tmp/openclash_YouTube Premium_region")
+	end
+	return value
+end
 
 o = s:taboption("stream_enhance", Value, "stream_auto_select_node_key_ytb", translate("Unlock Nodes Filter"))
 o.default = ""
@@ -823,6 +936,12 @@ o.default = ""
 o.placeholder = "HK|US|SG"
 o.description = translate("It Will Be Selected Region(Country Shortcode) According To The Regex")
 o:depends("stream_auto_select_prime_video", "1")
+function o.validate(self, value)
+	if value ~= m.uci:get("openclash", "config", "stream_auto_select_region_key_prime_video") then
+		fs.unlink("/tmp/openclash_Amazon Prime Video_region")
+	end
+	return value
+end
 
 o = s:taboption("stream_enhance", Value, "stream_auto_select_node_key_prime_video", translate("Unlock Nodes Filter"))
 o.default = ""
@@ -873,6 +992,12 @@ o.default = ""
 o.placeholder = "US"
 o.description = translate("It Will Be Selected Region(Country Shortcode) According To The Regex")
 o:depends("stream_auto_select_hbo_max", "1")
+function o.validate(self, value)
+	if value ~= m.uci:get("openclash", "config", "stream_auto_select_region_key_hbo_max") then
+		fs.unlink("/tmp/openclash_HBO Max_region")
+	end
+	return value
+end
 
 o = s:taboption("stream_enhance", Value, "stream_auto_select_node_key_hbo_max", translate("Unlock Nodes Filter"))
 o.default = ""
@@ -901,6 +1026,12 @@ o.default = ""
 o.placeholder = "HK|SG|TW"
 o.description = translate("It Will Be Selected Region(Country Shortcode) According To The Regex")
 o:depends("stream_auto_select_hbo_go_asia", "1")
+function o.validate(self, value)
+	if value ~= m.uci:get("openclash", "config", "stream_auto_select_region_key_hbo_go_asia") then
+		fs.unlink("/tmp/openclash_HBO GO Asia_region")
+	end
+	return value
+end
 
 o = s:taboption("stream_enhance", Value, "stream_auto_select_node_key_hbo_go_asia", translate("Unlock Nodes Filter"))
 o.default = ""
@@ -929,6 +1060,12 @@ o.default = ""
 o.placeholder = "HK|SG|TW"
 o.description = translate("It Will Be Selected Region(Country Shortcode) According To The Regex")
 o:depends("stream_auto_select_tvb_anywhere", "1")
+function o.validate(self, value)
+	if value ~= m.uci:get("openclash", "config", "stream_auto_select_region_key_tvb_anywhere") then
+		fs.unlink("/tmp/openclash_TVB Anywhere+_region")
+	end
+	return value
+end
 
 o = s:taboption("stream_enhance", Value, "stream_auto_select_node_key_tvb_anywhere", translate("Unlock Nodes Filter"))
 o.default = ""
@@ -957,6 +1094,12 @@ o.default = ""
 o.placeholder = "DE"
 o.description = translate("It Will Be Selected Region(Country Shortcode) According To The Regex")
 o:depends("stream_auto_select_dazn", "1")
+function o.validate(self, value)
+	if value ~= m.uci:get("openclash", "config", "stream_auto_select_region_key_dazn") then
+		fs.unlink("/tmp/openclash_DAZN_region")
+	end
+	return value
+end
 
 o = s:taboption("stream_enhance", Value, "stream_auto_select_node_key_dazn", translate("Unlock Nodes Filter"))
 o.default = ""
@@ -985,6 +1128,12 @@ o.default = ""
 o.placeholder = "US"
 o.description = translate("It Will Be Selected Region(Country Shortcode) According To The Regex")
 o:depends("stream_auto_select_paramount_plus", "1")
+function o.validate(self, value)
+	if value ~= m.uci:get("openclash", "config", "stream_auto_select_region_key_paramount_plus") then
+		fs.unlink("/tmp/openclash_Paramount Plus_region")
+	end
+	return value
+end
 
 o = s:taboption("stream_enhance", Value, "stream_auto_select_node_key_paramount_plus", translate("Unlock Nodes Filter"))
 o.default = ""
@@ -1013,6 +1162,12 @@ o.default = ""
 o.placeholder = "US"
 o.description = translate("It Will Be Selected Region(Country Shortcode) According To The Regex")
 o:depends("stream_auto_select_discovery_plus", "1")
+function o.validate(self, value)
+	if value ~= m.uci:get("openclash", "config", "stream_auto_select_region_key_discovery_plus") then
+		fs.unlink("/tmp/openclash_Discovery Plus_region")
+	end
+	return value
+end
 
 o = s:taboption("stream_enhance", Value, "stream_auto_select_node_key_discovery_plus", translate("Unlock Nodes Filter"))
 o.default = ""
@@ -1024,6 +1179,64 @@ o.rawhtml = true
 o.template = "openclash/other_stream_option"
 o.value = "Discovery Plus"
 o:depends("stream_auto_select_discovery_plus", "1")
+
+--Bilibili
+o = s:taboption("stream_enhance", Flag, "stream_auto_select_bilibili", font_red..translate("Bilibili")..font_off)
+o.default = 0
+o:depends("stream_auto_select", "1")
+
+o = s:taboption("stream_enhance", Value, "stream_auto_select_group_key_bilibili", translate("Group Filter"))
+o.default = "Bilibili"
+o.placeholder = "Bilibili"
+o.description = translate("It Will Be Searched According To The Regex When Auto Search Group Fails")
+o:depends("stream_auto_select_bilibili", "1")
+
+o = s:taboption("stream_enhance", ListValue, "stream_auto_select_region_key_bilibili", translate("Unlock Region Filter"))
+o.default = "CN"
+o:value("CN", translate("China Mainland Only"))
+o:value("HK/MO/TW", translate("Hongkong/Macau/Taiwan"))
+o:value("TW", translate("Taiwan Only"))
+o.description = translate("It Will Be Selected Region(Country Shortcode) According To The Regex")
+o:depends("stream_auto_select_bilibili", "1")
+function o.validate(self, value)
+	if value ~= m.uci:get("openclash", "config", "stream_auto_select_region_key_bilibili") then
+		fs.unlink("/tmp/openclash_Bilibili_region")
+	end
+	return value
+end
+
+o = s:taboption("stream_enhance", Value, "stream_auto_select_node_key_bilibili", translate("Unlock Nodes Filter"))
+o.default = ""
+o.description = translate("It Will Be Selected Nodes According To The Regex")
+o:depends("stream_auto_select_bilibili", "1")
+
+o = s:taboption("stream_enhance", DummyValue, "Bilibili", translate("Manual Test"))
+o.rawhtml = true
+o.template = "openclash/other_stream_option"
+o.value = "Bilibili"
+o:depends("stream_auto_select_bilibili", "1")
+
+--Google not cn
+o = s:taboption("stream_enhance", Flag, "stream_auto_select_google_not_cn", font_red..translate("Google Not CN")..font_off)
+o.default = 0
+o:depends("stream_auto_select", "1")
+
+o = s:taboption("stream_enhance", Value, "stream_auto_select_group_key_google_not_cn", translate("Group Filter"))
+o.default = "Google"
+o.placeholder = "Google"
+o.description = translate("It Will Be Searched According To The Regex When Auto Search Group Fails")
+o:depends("stream_auto_select_google_not_cn", "1")
+
+o = s:taboption("stream_enhance", Value, "stream_auto_select_node_key_google_not_cn", translate("Unlock Nodes Filter"))
+o.default = ""
+o.description = translate("It Will Be Selected Nodes According To The Regex")
+o:depends("stream_auto_select_google_not_cn", "1")
+
+o = s:taboption("stream_enhance", DummyValue, "Google", translate("Manual Test"))
+o.rawhtml = true
+o.template = "openclash/other_stream_option"
+o.value = "Google"
+o:depends("stream_auto_select_google_not_cn", "1")
 
 ---- update Settings
 o = s:taboption("rules_update", Flag, "other_rule_auto_update", translate("Auto Update"))
@@ -1087,9 +1300,9 @@ o = s:taboption("geo_update", Value, "geo_custom_url")
 o.title = translate("Custom GEOIP URL")
 o.rmempty = true
 o.description = translate("Custom GEOIP Data URL, Click Button Below To Refresh After Edit")
-o:value("https://fastly.jsdelivr.net/gh/alecthw/mmdb_china_ip_list@release/lite/Country.mmdb", translate("Alecthw-lite-Version")..translate("(Default mmdb)"))
-o:value("https://fastly.jsdelivr.net/gh/alecthw/mmdb_china_ip_list@release/Country.mmdb", translate("Alecthw-Version")..translate("(All Info mmdb)"))
-o:value("https://fastly.jsdelivr.net/gh/Hackl0us/GeoIP2-CN@release/Country.mmdb", translate("Hackl0us-Version")..translate("(Only CN)"))
+o:value("https://testingcf.jsdelivr.net/gh/alecthw/mmdb_china_ip_list@release/lite/Country.mmdb", translate("Alecthw-lite-Version")..translate("(Default mmdb)"))
+o:value("https://testingcf.jsdelivr.net/gh/alecthw/mmdb_china_ip_list@release/Country.mmdb", translate("Alecthw-Version")..translate("(All Info mmdb)"))
+o:value("https://testingcf.jsdelivr.net/gh/Hackl0us/GeoIP2-CN@release/Country.mmdb", translate("Hackl0us-Version")..translate("(Only CN)"))
 o:value("https://geolite.clash.dev/Country.mmdb", translate("Geolite.clash.dev"))
 o.default = "http://www.ideame.top/mmdb/Country.mmdb"
 o:depends("enable_geoip_dat", 0)
@@ -1133,7 +1346,8 @@ o.rmempty = false
 o.description = translate("Custom Chnroute Lists URL, Click Button Below To Refresh After Edit")
 o:value("https://ispip.clang.cn/all_cn.txt", translate("Clang-CN")..translate("(Default)"))
 o:value("https://ispip.clang.cn/all_cn_cidr.txt", translate("Clang-CN-CIDR"))
-o:value("https://fastly.jsdelivr.net/gh/Hackl0us/GeoIP2-CN@release/CN-ip-cidr.txt", translate("Hackl0us-CN-CIDR")..translate("(Large Size)"))
+o:value("https://fastly.jsdelivr.net/gh/Hackl0us/GeoIP2-CN@release/CN-ip-cidr.txt", translate("Hackl0us-CN-CIDR-fastly-jsdelivr")..translate("(Large Size)"))
+o:value("https://testingcf.jsdelivr.net/gh/Hackl0us/GeoIP2-CN@release/CN-ip-cidr.txt", translate("Hackl0us-CN-CIDR-testingcf-jsdelivr")..translate("(Large Size)"))
 o.default = "https://ispip.clang.cn/all_cn.txt"
 
 o = s:taboption("chnr_update", Value, "chnr6_custom_url")
@@ -1142,6 +1356,16 @@ o.rmempty = false
 o.description = translate("Custom Chnroute6 Lists URL, Click Button Below To Refresh After Edit")
 o:value("https://ispip.clang.cn/all_cn_ipv6.txt", translate("Clang-CN-IPV6")..translate("(Default)"))
 o.default = "https://ispip.clang.cn/all_cn_ipv6.txt"
+
+o = s:taboption("chnr_update", Value, "cndomain_custom_url")
+o.title = translate("Custom CN Doamin Lists URL")
+o.rmempty = false
+o.description = translate("Custom CN Doamin Dnsmasq Conf URL, Click Button Below To Refresh After Edit")
+o:value("https://testingcf.jsdelivr.net/gh/felixonmars/dnsmasq-china-list@master/accelerated-domains.china.conf", translate("dnsmasq-china-list-testingcf-jsdelivr")..translate("(Default)"))
+o:value("https://fastly.jsdelivr.net/gh/felixonmars/dnsmasq-china-list@master/accelerated-domains.china.conf", translate("dnsmasq-china-list-fastly-jsdelivr"))
+o:value("https://raw.fastgit.org/felixonmars/dnsmasq-china-list/master/accelerated-domains.china.conf", translate("dnsmasq-china-list-fastgit"))
+o:value("https://raw.githubusercontent.com/felixonmars/dnsmasq-china-list/master/accelerated-domains.china.conf", translate("dnsmasq-china-list-github"))
+o.default = "https://testingcf.jsdelivr.net/gh/felixonmars/dnsmasq-china-list@master/accelerated-domains.china.conf"
 
 o = s:taboption("chnr_update", Button, translate("Chnroute Lists Update")) 
 o.title = translate("Update Chnroute Lists")
@@ -1207,9 +1431,119 @@ o.title = translate("Public Dashboard SSL enabled")
 o.default = 0
 o.description = translate("Is SSL enabled For Dashboard Login From Public Network")
 
+o = s:taboption("dashboard", DummyValue, "Dashboard", translate("Switch(Update) Dashboard Version"))
+o.template="openclash/switch_dashboard"
+o.rawhtml = true
+
+o = s:taboption("dashboard", DummyValue, "Yacd", translate("Switch(Update) Yacd Version"))
+o.template="openclash/switch_dashboard"
+o.rawhtml = true
+
+---- ipv6
+o = s:taboption("ipv6", Flag, "ipv6_enable", font_red..bold_on..translate("Proxy IPv6 Traffic")..bold_off..font_off)
+o.description = font_red..bold_on..translate("The Gateway and DNS of The Connected Device Must be The Router IP, Disable IPv6 DHCP To Avoid Abnormal Connection If You Do Not Use")..bold_off..font_off
+o.default = 0
+
+o = s:taboption("ipv6", Flag, "ipv6_dns", translate("IPv6 DNS Resolve"))
+o.description = font_red..bold_on..translate("Enable to Resolve IPv6 DNS Requests, When Using The Meta Core, Enabling This Alone is Not Valid")..bold_off..font_off
+o.default = 0
+
+o = s:taboption("ipv6", Flag, "china_ip6_route", translate("China IPv6 Route"))
+o.description = translate("Bypass The China Network Flows, Improve Performance")
+o.default = 0
+o:depends("ipv6_enable", "1")
+
+o = s:taboption("ipv6", Value, "local_network6_pass", translate("Local IPv6 Network Bypassed List"))
+o.template = "cbi/tvalue"
+o.description = translate("The Traffic of The Destination For The Specified Address Will Not Pass The Core")
+o.rows = 20
+o.wrap = "off"
+o:depends("ipv6_enable", "1")
+
+function o.cfgvalue(self, section)
+	return NXFS.readfile("/etc/openclash/custom/openclash_custom_localnetwork_ipv6.list") or ""
+end
+function o.write(self, section, value)
+	if value then
+		value = value:gsub("\r\n?", "\n")
+		local old_value = NXFS.readfile("/etc/openclash/custom/openclash_custom_localnetwork_ipv6.list")
+	  if value ~= old_value then
+			NXFS.writefile("/etc/openclash/custom/openclash_custom_localnetwork_ipv6.list", value)
+		end
+	end
+end
+
+o = s:taboption("ipv6", Value, "chnroute6_pass", translate("Chnroute6 Bypassed List"))
+o.template = "cbi/tvalue"
+o.description = translate("Domains or IPs in The List Will Not be Affected by The China IP Route Option, Depend on Dnsmasq")
+o.rows = 20
+o.wrap = "off"
+o:depends({ipv6_enable = "1", enable_redirect_dns = "1"})
+
+function o.cfgvalue(self, section)
+	return NXFS.readfile("/etc/openclash/custom/openclash_custom_chnroute6_pass.list") or ""
+end
+function o.write(self, section, value)
+	if value then
+		value = value:gsub("\r\n?", "\n")
+		local old_value = NXFS.readfile("/etc/openclash/custom/openclash_custom_chnroute6_pass.list")
+		if value ~= old_value then
+			NXFS.writefile("/etc/openclash/custom/openclash_custom_chnroute6_pass.list", value)
+		end
+	end
+end
+
 ---- version update
 core_update = s:taboption("version_update", DummyValue, "", nil)
 core_update.template = "openclash/update"
+
+---- developer
+o = s:taboption("developer", Value, "firewall_custom")
+o.template = "cbi/tvalue"
+o.description = translate("Custom Firewall Rules, Support IPv4 and IPv6, All Rules Will Be Added After The OpenClash Rules Completely")
+o.rows = 30
+o.wrap = "off"
+
+function o.cfgvalue(self, section)
+	return NXFS.readfile("/etc/openclash/custom/openclash_custom_firewall_rules.sh") or ""
+end
+function o.write(self, section, value)
+	if value then
+		value = value:gsub("\r\n?", "\n")
+		local old_value = NXFS.readfile("/etc/openclash/custom/openclash_custom_firewall_rules.sh")
+		if value ~= old_value then
+			NXFS.writefile("/etc/openclash/custom/openclash_custom_firewall_rules.sh", value)
+		end
+	end
+end
+
+o = s:taboption("developer", Value, "ymchange_custom")
+o.template = "cbi/tvalue"
+o.description = translate("Custom Config Override Script, Any Changes Will Be Restored After The Install of the OC, Please Be Careful, The Wrong Changes May Lead to Exceptions")
+o.rows = 30
+o.wrap = "off"
+
+function o.cfgvalue(self, section)
+	return NXFS.readfile("/usr/share/openclash/yml_change.sh") or ""
+end
+function o.write(self, section, value)
+	if value then
+		value = value:gsub("\r\n?", "\n")
+		local old_value = NXFS.readfile("/usr/share/openclash/yml_change.sh")
+		if value ~= old_value then
+			NXFS.writefile("/usr/share/openclash/yml_change.sh", value)
+		end
+	end
+end
+
+o = s:taboption("developer", Button, translate("Restore Override Script"))
+o.title = translate("Restore Override Script")
+o.inputtitle = translate("Restore")
+o.inputstyle = "reload"
+o.write = function()
+  SYS.call("cp /usr/share/openclash/backup/yml_change.sh /usr/share/openclash/yml_change.sh >/dev/null 2>&1")
+  HTTP.redirect(DISP.build_url("admin", "services", "openclash", "settings"))
+end
 
 ---- debug
 o = s:taboption("debug", DummyValue, "", nil)
@@ -1264,53 +1598,49 @@ else
 end
 
 -- [[ Edit Custom DNS ]] --
-s = m:section(TypedSection, "dns_servers", translate("Add Custom DNS Servers")..translate("(Take Effect After Choose Above)"))
-s.anonymous = true
-s.addremove = true
-s.sortable = false
-s.template = "cbi/tblsection"
-s.rmempty = false
+ds = m:section(TypedSection, "dns_servers", translate("Add Custom DNS Servers")..translate("(Take Effect After Choose Above)"))
+ds.anonymous = true
+ds.addremove = true
+ds.sortable = true
+ds.template = "cbi/tblsection"
+ds.extedit = luci.dispatcher.build_url("admin/services/openclash/custom-dns-edit/%s")
+function ds.create(...)
+	local sid = TypedSection.create(...)
+	if sid then
+		luci.http.redirect(ds.extedit % sid)
+		return
+	end
+end
 
 ---- enable flag
-o = s:option(Flag, "enabled", translate("Enable"), font_red..bold_on..translate("(Enable or Disable)")..bold_off..font_off)
+o = ds:option(Flag, "enabled", translate("Enable"))
 o.rmempty     = false
 o.default     = o.enabled
 o.cfgvalue    = function(...)
     return Flag.cfgvalue(...) or "1"
 end
 
----- enable flag
-o = s:option(Flag, "node_resolve", translate("Node Domain Resolve"), font_red..bold_on..translate("(Only Meta Core)")..bold_off..font_off)
-o.rmempty     = false
-o.default     = o.disbled
-o.cfgvalue    = function(...)
-    return Flag.cfgvalue(...) or "0"
-end
-
 ---- group
-o = s:option(ListValue, "group", translate("DNS Server Group"))
-o.description = font_red..bold_on..translate("(NameServer Group Must Be Set)")..bold_off..font_off
-o:value("nameserver", translate("NameServer"))
-o:value("fallback", translate("FallBack"))
+o = ds:option(ListValue, "group", translate("DNS Server Group"))
+o:value("nameserver", translate("NameServer "))
+o:value("fallback", translate("FallBack "))
+o:value("default", translate("Default-NameServer"))
 o.default     = "nameserver"
 o.rempty      = false
 
 ---- IP address
-o = s:option(Value, "ip", translate("DNS Server Address"))
-o.description = font_red..bold_on..translate("(Do Not Add Type Ahead)")..bold_off..font_off
+o = ds:option(Value, "ip", translate("DNS Server Address"))
 o.placeholder = translate("Not Null")
 o.datatype = "or(host, string)"
 o.rmempty = true
 
 ---- port
-o = s:option(Value, "port", translate("DNS Server Port"))
-o.description = font_red..bold_on..translate("(Require When Use Non-Standard Port)")..bold_off..font_off
+o = ds:option(Value, "port", translate("DNS Server Port"))
 o.datatype    = "port"
 o.rempty      = true
 
 ---- type
-o = s:option(ListValue, "type", translate("DNS Server Type"))
-o.description = font_red..bold_on..translate("(Communication protocol)")..bold_off..font_off
+o = ds:option(ListValue, "type", translate("DNS Server Type"))
 o:value("udp", translate("UDP"))
 o:value("tcp", translate("TCP"))
 o:value("tls", translate("TLS"))
@@ -1318,31 +1648,6 @@ o:value("https", translate("HTTPS"))
 o:value("quic", translate("QUIC ")..translate("(Only Meta Core)"))
 o.default     = "udp"
 o.rempty      = false
-
----- interface
-o = s:option(Value, "interface", translate("Specific Interface"))
-o.description = font_red..bold_on..translate("(Only TUN Core)")..bold_off..font_off
-for interface in string.gmatch(interfaces, "%S+") do
-	o:value(interface)
-end
-o:value("Disable", translate("Disable"))
-o.default = "Disable"
-o.rempty = false
-
----- Proxy group
-o = s:option(Value, "specific_group", translate("Specific Group"))
-o.description = font_red..bold_on..translate("(Only Meta Core)")..bold_off..font_off
-uci:foreach("openclash", "groups",
-		function(s)
-		  if s.name ~= "" and s.name ~= nil then
-			   o:value(s.name)
-			end
-		end)
-o:value("DIRECT")
-o:value("REJECT")
-o:value("Disable", translate("Disable"))
-o.default = "Disable"
-o.rempty = false
 
 -- [[ Other Rules Manage ]]--
 ss = m:section(TypedSection, "other_rules", translate("Other Rules Edit")..translate("(Take Effect After Choose Above)"))

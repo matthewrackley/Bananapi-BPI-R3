@@ -238,8 +238,6 @@ yml_servers_set()
    config_get "vless_flow" "$section" "vless_flow" ""
    config_get "http_headers" "$section" "http_headers" ""
    config_get "hysteria_protocol" "$section" "hysteria_protocol" ""
-   config_get "up_mbps" "$section" "up_mbps" ""
-   config_get "down_mbps" "$section" "down_mbps" ""
    config_get "hysteria_up" "$section" "hysteria_up" ""
    config_get "hysteria_down" "$section" "hysteria_down" ""
    config_get "hysteria_alpn" "$section" "hysteria_alpn" ""
@@ -251,7 +249,40 @@ yml_servers_set()
    config_get "recv_window_conn" "$section" "recv_window_conn" ""
    config_get "recv_window" "$section" "recv_window" ""
    config_get "disable_mtu_discovery" "$section" "disable_mtu_discovery" ""
+   config_get "xudp" "$section" "xudp" ""
+   config_get "packet_encoding" "$section" "packet_encoding" ""
+   config_get "global_padding" "$section" "global_padding" ""
+   config_get "authenticated_length" "$section" "authenticated_length" ""
+   config_get "wg_ip" "$section" "wg_ip" ""
+   config_get "wg_ipv6" "$section" "wg_ipv6" ""
+   config_get "private_key" "$section" "private_key" ""
+   config_get "public_key" "$section" "public_key" ""
+   config_get "preshared_key" "$section" "preshared_key" ""
+   config_get "wg_dns" "$section" "wg_dns" ""
+   config_get "public_key" "$section" "public_key" ""
+   config_get "preshared_key" "$section" "preshared_key" ""
+   config_get "wg_mtu" "$section" "wg_mtu" ""
+   config_get "tc_ip" "$section" "tc_ip" ""
+   config_get "tc_token" "$section" "tc_token" ""
+   config_get "udp_relay_mode" "$section" "udp_relay_mode" ""
+   config_get "congestion_controller" "$section" "congestion_controller" ""
+   config_get "tc_alpn" "$section" "tc_alpn" ""
+   config_get "disable_sni" "$section" "disable_sni" ""
+   config_get "reduce_rtt" "$section" "reduce_rtt" ""
+   config_get "heartbeat_interval" "$section" "heartbeat_interval" ""
+   config_get "request_timeout" "$section" "request_timeout" ""
+   config_get "max_udp_relay_packet_size" "$section" "max_udp_relay_packet_size" ""
+   config_get "fast_open" "$section" "fast_open" ""
+   config_get "fingerprint" "$section" "fingerprint" ""
+   config_get "ports" "$section" "ports" ""
+   config_get "hop_interval" "$section" "hop_interval" ""
+   config_get "max_open_streams" "$section" "max_open_streams" ""
+   config_get "obfs_password" "$section" "obfs_password" ""
+   config_get "packet_addr" "$section" "packet_addr" ""
+   config_get "client_fingerprint" "$section" "client_fingerprint" ""
+   config_get "ip_version" "$section" "ip_version" ""
 
+   
    if [ "$enabled" = "0" ]; then
       return
    fi
@@ -310,6 +341,8 @@ yml_servers_set()
    if [ "$obfs" != "none" ] && [ -n "$obfs" ]; then
       if [ "$obfs" = "websocket" ]; then
          obfss="plugin: v2ray-plugin"
+      elif [ "$obfs" = "shadow-tls" ]; then
+        obfss="plugin: shadow-tls"
       else
          obfss="plugin: obfs"
       fi
@@ -372,12 +405,28 @@ EOF
 cat >> "$SERVER_FILE" <<-EOF
     $obfss
     plugin-opts:
+EOF
+    if [ "$obfs" != "shadow-tls" ]; then
+cat >> "$SERVER_FILE" <<-EOF
       mode: $obfs
 EOF
+    fi
         if [ ! -z "$host" ]; then
 cat >> "$SERVER_FILE" <<-EOF
       host: "$host"
 EOF
+        fi
+        if [  "$obfss" = "plugin: shadow-tls" ]; then
+           if [ ! -z "$obfs_password" ]; then
+cat >> "$SERVER_FILE" <<-EOF
+      password: $obfs_password
+EOF
+           fi
+           if [ ! -z "$fingerprint" ]; then
+cat >> "$SERVER_FILE" <<-EOF
+      fingerprint: "$fingerprint"
+EOF
+           fi
         fi
         if [  "$obfss" = "plugin: v2ray-plugin" ]; then
            if [ ! -z "$tls" ]; then
@@ -404,6 +453,11 @@ EOF
 cat >> "$SERVER_FILE" <<-EOF
       headers:
         custom: $custom
+EOF
+           fi
+           if [ ! -z "$fingerprint" ]; then
+cat >> "$SERVER_FILE" <<-EOF
+      fingerprint: "$fingerprint"
 EOF
            fi
         fi
@@ -455,6 +509,26 @@ cat >> "$SERVER_FILE" <<-EOF
     udp: $udp
 EOF
       fi
+      if [ ! -z "$xudp" ]; then
+cat >> "$SERVER_FILE" <<-EOF
+    xudp: $xudp
+EOF
+      fi
+      if [ ! -z "$packet_encoding" ]; then
+cat >> "$SERVER_FILE" <<-EOF
+    packet-encoding: "$packet_encoding"
+EOF
+      fi
+      if [ ! -z "$global_padding" ]; then
+cat >> "$SERVER_FILE" <<-EOF
+    global-padding: $global_padding
+EOF
+      fi
+      if [ ! -z "$authenticated_length" ]; then
+cat >> "$SERVER_FILE" <<-EOF
+    authenticated-length: $authenticated_length
+EOF
+      fi
       if [ ! -z "$skip_cert_verify" ]; then
 cat >> "$SERVER_FILE" <<-EOF
     skip-cert-verify: $skip_cert_verify
@@ -463,6 +537,16 @@ EOF
       if [ ! -z "$tls" ]; then
 cat >> "$SERVER_FILE" <<-EOF
     tls: $tls
+EOF
+      fi
+      if [ ! -z "$fingerprint" ]; then
+cat >> "$SERVER_FILE" <<-EOF
+    fingerprint: "$fingerprint"
+EOF
+      fi
+      if [ ! -z "$client_fingerprint" ]; then
+cat >> "$SERVER_FILE" <<-EOF
+    client-fingerprint: "$client_fingerprint"
 EOF
       fi
       if [ ! -z "$servername" ] && [ "$tls" = "true" ]; then
@@ -554,6 +638,128 @@ EOF
       fi
    fi
 
+#Tuic
+   if [ "$type" = "tuic" ]; then
+cat >> "$SERVER_FILE" <<-EOF
+  - name: "$name"
+    type: $type
+    server: "$server"
+    port: $port
+EOF
+      if [ -n "$tc_ip" ]; then
+cat >> "$SERVER_FILE" <<-EOF
+    ip: "$tc_ip"
+EOF
+      fi
+      if [ -n "$tc_token" ]; then
+cat >> "$SERVER_FILE" <<-EOF
+    token: "$tc_token"
+EOF
+      fi
+      if [ -n "$udp_relay_mode" ]; then
+cat >> "$SERVER_FILE" <<-EOF
+    udp-relay-mode: "$udp_relay_mode"
+EOF
+      fi
+      if [ -n "$congestion_controller" ]; then
+cat >> "$SERVER_FILE" <<-EOF
+    congestion-controller: "$congestion_controller"
+EOF
+      fi
+      if [ -n "$tc_alpn" ]; then
+cat >> "$SERVER_FILE" <<-EOF
+    alpn:
+EOF
+      config_list_foreach "$section" "tc_alpn" set_alpn
+      fi
+      if [ -n "$disable_sni" ]; then
+cat >> "$SERVER_FILE" <<-EOF
+    disable-sni: $disable_sni
+EOF
+      fi
+      if [ -n "$reduce_rtt" ]; then
+cat >> "$SERVER_FILE" <<-EOF
+    reduce-rtt: $reduce_rtt
+EOF
+      fi
+      if [ -n "$fast_open" ]; then
+cat >> "$SERVER_FILE" <<-EOF
+    fast-open: $fast_open
+EOF
+      fi
+      if [ -n "$heartbeat_interval" ]; then
+cat >> "$SERVER_FILE" <<-EOF
+    heartbeat-interval: $heartbeat_interval
+EOF
+      fi
+      if [ -n "$request_timeout" ]; then
+cat >> "$SERVER_FILE" <<-EOF
+    request-timeout: $request_timeout
+EOF
+      fi
+      if [ -n "$max_udp_relay_packet_size" ]; then
+cat >> "$SERVER_FILE" <<-EOF
+    max-udp-relay-packet-size: $max_udp_relay_packet_size
+EOF
+      fi
+      if [ -n "$max_open_streams" ]; then
+cat >> "$SERVER_FILE" <<-EOF
+    max-open-streams: $max_open_streams
+EOF
+      fi
+   fi
+
+#WireGuard
+   if [ "$type" = "wireguard" ]; then
+cat >> "$SERVER_FILE" <<-EOF
+  - name: "$name"
+    type: $type
+    server: "$server"
+    port: $port
+EOF
+      if [ -n "$wg_ip" ]; then
+cat >> "$SERVER_FILE" <<-EOF
+    ip: "$wg_ip"
+EOF
+      fi
+      if [ -n "$wg_ipv6" ]; then
+cat >> "$SERVER_FILE" <<-EOF
+    ipv6: "$wg_ipv6"
+EOF
+      fi
+      if [ -n "$private_key" ]; then
+cat >> "$SERVER_FILE" <<-EOF
+    private-key: "$private_key"
+EOF
+      fi
+      if [ -n "$public_key" ]; then
+cat >> "$SERVER_FILE" <<-EOF
+    public-key: "$public_key"
+EOF
+      fi
+      if [ -n "$preshared_key" ]; then
+cat >> "$SERVER_FILE" <<-EOF
+    preshared-key: "$preshared_key"
+EOF
+      fi
+      if [ -n "$preshared_key" ]; then
+cat >> "$SERVER_FILE" <<-EOF
+    dns:
+EOF
+      config_list_foreach "$section" "wg_dns" set_alpn
+      fi
+      if [ -n "$wg_mtu" ]; then
+cat >> "$SERVER_FILE" <<-EOF
+    mtu: "$wg_mtu"
+EOF
+      fi
+      if [ -n "$udp" ]; then
+cat >> "$SERVER_FILE" <<-EOF
+    udp: $udp
+EOF
+      fi
+   fi
+
 #hysteria
    if [ "$type" = "hysteria" ]; then
 cat >> "$SERVER_FILE" <<-EOF
@@ -563,22 +769,12 @@ cat >> "$SERVER_FILE" <<-EOF
     port: $port
     protocol: $hysteria_protocol
 EOF
-      if [ -n "$up_mbps" ]; then
-cat >> "$SERVER_FILE" <<-EOF
-    up_mbps: "$up_mbps"
-EOF
-      fi
-      if [ -n "$down_mbps" ]; then
-cat >> "$SERVER_FILE" <<-EOF
-    down_mbps: "$down_mbps"
-EOF
-      fi
-      if [ -n "$hysteria_up" ] && [ -z "$up_mbps" ]; then
+      if [ -n "$hysteria_up" ]; then
 cat >> "$SERVER_FILE" <<-EOF
     up: "$hysteria_up"
 EOF
       fi
-      if [ -n "$hysteria_down" ] && [ -z "$down_mbps" ]; then
+      if [ -n "$hysteria_down" ]; then
 cat >> "$SERVER_FILE" <<-EOF
     down: "$hysteria_down"
 EOF
@@ -594,9 +790,17 @@ cat >> "$SERVER_FILE" <<-EOF
 EOF
       fi
       if [ -n "$hysteria_alpn" ]; then
+         if [ -z "$(echo $hysteria_alpn |grep ' ')" ]; then
 cat >> "$SERVER_FILE" <<-EOF
-    alpn: "$hysteria_alpn"
+    alpn: 
+      - "$hysteria_alpn"
 EOF
+         else
+cat >> "$SERVER_FILE" <<-EOF
+    alpn:
+EOF
+      config_list_foreach "$section" "hysteria_alpn" set_alpn
+         fi
       fi
       if [ -n "$hysteria_obfs" ]; then
 cat >> "$SERVER_FILE" <<-EOF
@@ -610,7 +814,7 @@ EOF
       fi
       if [ -n "$hysteria_auth_str" ]; then
 cat >> "$SERVER_FILE" <<-EOF
-    auth_str: "$hysteria_auth_str"
+    auth-str: "$hysteria_auth_str"
 EOF
       fi
       if [ -n "$hysteria_ca" ]; then
@@ -620,22 +824,42 @@ EOF
       fi
       if [ -n "$hysteria_ca_str" ]; then
 cat >> "$SERVER_FILE" <<-EOF
-    ca_str: "$hysteria_ca_str"
+    ca-str: "$hysteria_ca_str"
 EOF
       fi
       if [ -n "$recv_window_conn" ]; then
 cat >> "$SERVER_FILE" <<-EOF
-    recv_window_conn: "$recv_window_conn"
+    recv-window-conn: "$recv_window_conn"
 EOF
       fi
       if [ -n "$recv_window" ]; then
 cat >> "$SERVER_FILE" <<-EOF
-    recv_window: "$recv_window"
+    recv-window: "$recv_window"
 EOF
       fi
       if [ -n "$disable_mtu_discovery" ]; then
 cat >> "$SERVER_FILE" <<-EOF
-    disable_mtu_discovery: $disable_mtu_discovery
+    disable-mtu-discovery: $disable_mtu_discovery
+EOF
+      fi
+      if [ -n "$fast_open" ]; then
+cat >> "$SERVER_FILE" <<-EOF
+    fast-open: $fast_open
+EOF
+      fi
+      if [ -n "$fingerprint" ]; then
+cat >> "$SERVER_FILE" <<-EOF
+    fingerprint: "$fingerprint"
+EOF
+      fi
+      if [ -n "$ports" ]; then
+cat >> "$SERVER_FILE" <<-EOF
+    ports: $ports
+EOF
+      fi
+      if [ -n "$hop_interval" ]; then
+cat >> "$SERVER_FILE" <<-EOF
+    hop-interval: $hop_interval
 EOF
       fi
    fi
@@ -654,6 +878,21 @@ cat >> "$SERVER_FILE" <<-EOF
     udp: $udp
 EOF
       fi
+      if [ ! -z "$xudp" ]; then
+cat >> "$SERVER_FILE" <<-EOF
+    xudp: $xudp
+EOF
+      fi
+      if [ ! -z "$packet_addr" ]; then
+cat >> "$SERVER_FILE" <<-EOF
+    packet-addr: $packet_addr
+EOF
+      fi
+      if [ ! -z "$packet_encoding" ]; then
+cat >> "$SERVER_FILE" <<-EOF
+    packet-encoding: "$packet_encoding"
+EOF
+      fi
       if [ ! -z "$skip_cert_verify" ]; then
 cat >> "$SERVER_FILE" <<-EOF
     skip-cert-verify: $skip_cert_verify
@@ -662,6 +901,16 @@ EOF
       if [ ! -z "$tls" ]; then
 cat >> "$SERVER_FILE" <<-EOF
     tls: $tls
+EOF
+      fi
+      if [ ! -z "$fingerprint" ]; then
+cat >> "$SERVER_FILE" <<-EOF
+    fingerprint: "$fingerprint"
+EOF
+      fi
+      if [ ! -z "$client_fingerprint" ]; then
+cat >> "$SERVER_FILE" <<-EOF
+    client-fingerprint: "$client_fingerprint"
 EOF
       fi
       if [ ! -z "$servername" ]; then
@@ -739,6 +988,11 @@ cat >> "$SERVER_FILE" <<-EOF
     tls: $tls
 EOF
       fi
+      if [ ! -z "$fingerprint" ]; then
+cat >> "$SERVER_FILE" <<-EOF
+    fingerprint: "$fingerprint"
+EOF
+      fi
    fi
 
 #http
@@ -774,7 +1028,7 @@ cat >> "$SERVER_FILE" <<-EOF
     sni: "$sni"
 EOF
       fi
-      if [ -n "$ws_opts_headers" ]; then
+      if [ -n "$http_headers" ]; then
 cat >> "$SERVER_FILE" <<-EOF
     headers:
 EOF
@@ -810,6 +1064,16 @@ EOF
    if [ ! -z "$skip_cert_verify" ]; then
 cat >> "$SERVER_FILE" <<-EOF
     skip-cert-verify: $skip_cert_verify
+EOF
+   fi
+   if [ ! -z "$fingerprint" ]; then
+cat >> "$SERVER_FILE" <<-EOF
+  fingerprint: "$fingerprint"
+EOF
+   fi
+   if [ ! -z "$client_fingerprint" ]; then
+cat >> "$SERVER_FILE" <<-EOF
+  client-fingerprint: "$client_fingerprint"
 EOF
    fi
    if [ ! -z "$grpc_service_name" ]; then
@@ -861,6 +1125,13 @@ cat >> "$SERVER_FILE" <<-EOF
       host: "$host"
 EOF
    fi
+   fi
+
+#ip_version
+   if [ ! -z "$ip_version" ]; then
+cat >> "$SERVER_FILE" <<-EOF
+    ip-version: "$ip_version"
+EOF
    fi
    
 #interface-name
@@ -971,7 +1242,7 @@ EOF
 fi
 cat /tmp/Proxy_Provider >> $SERVER_FILE 2>/dev/null
 cat >> "$SERVER_FILE" <<-EOF
-    url: https://cp.cloudflare.com/generate_204
+    url: http://cp.cloudflare.com/generate_204
     interval: "600"
     tolerance: "150"
   - name: Proxy
@@ -1069,7 +1340,7 @@ EOF
 fi
 cat /tmp/Proxy_Provider >> $SERVER_FILE 2>/dev/null
 cat >> "$SERVER_FILE" <<-EOF
-    url: https://cp.cloudflare.com/generate_204
+    url: http://cp.cloudflare.com/generate_204
     interval: "600"
     tolerance: "150"
   - name: Proxy
@@ -1151,20 +1422,6 @@ cat >> "$SERVER_FILE" <<-EOF
     proxies:
       - Asian TV
       - DIRECT
-EOF
-cat /tmp/Proxy_Server >> $SERVER_FILE 2>/dev/null
-if [ -f "/tmp/Proxy_Provider" ]; then
-cat >> "$SERVER_FILE" <<-EOF
-    use:
-EOF
-fi
-cat /tmp/Proxy_Provider >> $SERVER_FILE 2>/dev/null
-cat >> "$SERVER_FILE" <<-EOF
-  - name: Douyin
-    type: select
-    proxies:
-      - DIRECT
-      - Asian TV
 EOF
 cat /tmp/Proxy_Server >> $SERVER_FILE 2>/dev/null
 if [ -f "/tmp/Proxy_Provider" ]; then
@@ -1405,6 +1662,20 @@ EOF
 fi
 cat /tmp/Proxy_Provider >> $SERVER_FILE 2>/dev/null
 cat >> "$SERVER_FILE" <<-EOF
+  - name: Discord
+    type: select
+    proxies:
+      - Proxy
+      - DIRECT
+EOF
+cat /tmp/Proxy_Server >> $SERVER_FILE 2>/dev/null
+if [ -f "/tmp/Proxy_Provider" ]; then
+cat >> "$SERVER_FILE" <<-EOF
+    use:
+EOF
+fi
+cat /tmp/Proxy_Provider >> $SERVER_FILE 2>/dev/null
+cat >> "$SERVER_FILE" <<-EOF
   - name: PayPal
     type: select
     proxies:
@@ -1431,7 +1702,6 @@ ${uci_set}AsianTV="Asian TV"
 ${uci_set}Proxy="Proxy"
 ${uci_set}Youtube="Youtube"
 ${uci_set}Bilibili="Bilibili"
-${uci_set}Douyin="Douyin"
 ${uci_set}Bahamut="Bahamut"
 ${uci_set}HBOMax="HBO Max"
 ${uci_set}HBOGo="HBO Go"
@@ -1450,6 +1720,7 @@ ${uci_set}AdBlock="AdBlock"
 ${uci_set}Speedtest="Speedtest"
 ${uci_set}Telegram="Telegram"
 ${uci_set}Crypto="Crypto"
+${uci_set}Discord="Discord"
 ${uci_set}PayPal="PayPal"
 ${uci_set}Domestic="Domestic"
 ${uci_set}Others="Others"
@@ -1461,7 +1732,6 @@ ${uci_set}Others="Others"
 	${UCI_DEL_LIST}="Proxy" >/dev/null 2>&1 && ${UCI_ADD_LIST}="Proxy" >/dev/null 2>&1
 	${UCI_DEL_LIST}="Youtube" >/dev/null 2>&1 && ${UCI_ADD_LIST}="Youtube" >/dev/null 2>&1
 	${UCI_DEL_LIST}="Bilibili" >/dev/null 2>&1 && ${UCI_ADD_LIST}="Bilibili" >/dev/null 2>&1
-   ${UCI_DEL_LIST}="Douyin" >/dev/null 2>&1 && ${UCI_ADD_LIST}="Douyin" >/dev/null 2>&1
 	${UCI_DEL_LIST}="Bahamut" >/dev/null 2>&1 && ${UCI_ADD_LIST}="Bahamut" >/dev/null 2>&1
 	${UCI_DEL_LIST}="HBO Max" >/dev/null 2>&1 && ${UCI_ADD_LIST}="HBO Max" >/dev/null 2>&1
 	${UCI_DEL_LIST}="HBO Go" >/dev/null 2>&1 && ${UCI_ADD_LIST}="HBO Go" >/dev/null 2>&1
@@ -1479,6 +1749,7 @@ ${uci_set}Others="Others"
 	${UCI_DEL_LIST}="Steam" >/dev/null 2>&1 && ${UCI_ADD_LIST}="Steam" >/dev/null 2>&1
 	${UCI_DEL_LIST}="Telegram" >/dev/null 2>&1 && ${UCI_ADD_LIST}="Telegram" >/dev/null 2>&1
    ${UCI_DEL_LIST}="Crypto" >/dev/null 2>&1 && ${UCI_ADD_LIST}="Crypto" >/dev/null 2>&1
+   ${UCI_DEL_LIST}="Discord" >/dev/null 2>&1 && ${UCI_ADD_LIST}="Discord" >/dev/null 2>&1
 	${UCI_DEL_LIST}="PayPal" >/dev/null 2>&1 && ${UCI_ADD_LIST}="PayPal" >/dev/null 2>&1
 	${UCI_DEL_LIST}="Speedtest" >/dev/null 2>&1 && ${UCI_ADD_LIST}="Speedtest" >/dev/null 2>&1
 }
@@ -1502,7 +1773,7 @@ EOF
 fi
 cat /tmp/Proxy_Provider >> $SERVER_FILE 2>/dev/null
 cat >> "$SERVER_FILE" <<-EOF
-    url: https://cp.cloudflare.com/generate_204
+    url: http://cp.cloudflare.com/generate_204
     interval: "600"
     tolerance: "150"
   - name: Proxy
@@ -1551,7 +1822,7 @@ if [ "$create_config" != "0" ] && [ "$servers_if_update" != "1" ] && [ -z "$if_g
    /usr/share/openclash/yml_groups_get.sh >/dev/null 2>&1
 elif [ -z "$if_game_proxy" ]; then
    LOG_OUT "Proxies, Proxy-providers, Groups Edited Successful, Updating Config File【$CONFIG_NAME】..."
-   config_hash=$(ruby -ryaml -E UTF-8 -e "Value = YAML.load_file('$CONFIG_FILE'); puts Value" 2>/dev/null)
+   config_hash=$(ruby -ryaml -rYAML -I "/usr/share/openclash" -E UTF-8 -e "Value = YAML.load_file('$CONFIG_FILE'); puts Value" 2>/dev/null)
    if [ "$config_hash" != "false" ] && [ -n "$config_hash" ]; then
       ruby_cover "$CONFIG_FILE" "['proxies']" "$SERVER_FILE" "proxies"
       ruby_cover "$CONFIG_FILE" "['proxy-providers']" "$PROXY_PROVIDER_FILE" "proxy-providers"
