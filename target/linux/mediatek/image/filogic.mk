@@ -30,9 +30,6 @@ define Build/mt7986-gpt
 		$(if $(findstring sdmmc,$1), \
 				-N install	-r	-p 20M@44M \
 			-t 0x2e -N production		-p $(CONFIG_TARGET_ROOTFS_PARTSIZE)M@64M \
-		) \
-		$(if $(findstring emmc,$1), \
-			-t 0x2e -N production		-p $(CONFIG_TARGET_ROOTFS_PARTSIZE)M@64M \
 		)
 	cat $@.tmp >> $@
 	rm $@.tmp

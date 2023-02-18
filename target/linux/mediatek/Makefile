@@ -12,6 +12,6 @@ KERNEL_PATCHVER:=5.15
 
 include $(INCLUDE_DIR)/target.mk
 DEFAULT_PACKAGES += \
-	kmod-leds-gpio kmod-gpio-button-hotplug
+	kmod-leds-gpio 
 
 $(eval $(call BuildTarget))
